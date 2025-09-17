@@ -4,9 +4,12 @@ const ACCOUNT_NAME_SELECTORS = [
   '[data-test="headerAccountListButtonText"]',
   "span.cds-p1-bold"
 ];
-const TITLE_SELECTOR = "title";
-const TITLE_SEPARATOR = ":";
-const ORIGINAL_TITLE_ATTR = "data-demo-hider-original-title";
+const EXCLUDED_TEXT_PARENT_NODES = new Set([
+  "SCRIPT",
+  "STYLE",
+  "NOSCRIPT",
+  "TEMPLATE"
+]);
 
 const LOGO_WIDTH = 300;
 const LOGO_HEIGHT = 100;
@@ -22,6 +25,10 @@ const state = {
 let observer;
 let isInitialized = false;
 const customLogos = new WeakMap();
+let originalAccountName = null;
+let originalAccountNamePriority = 0;
+let originalAccountNameSource = null;
+const replacedTextNodes = new Map();
 
 function getAccountNameElements() {
   const elements = new Set();
@@ -89,13 +96,26 @@ function applyCustomAccountName(element) {
     return;
   }
 
-  if (!element.hasAttribute(ORIGINAL_TEXT_ATTR)) {
-    const originalText = element.textContent ?? "";
-    element.setAttribute(ORIGINAL_TEXT_ATTR, originalText);
+  const currentText = element.textContent ?? "";
+  const trimmedCurrent = currentText.trim();
+  const storedOriginal = element.getAttribute(ORIGINAL_TEXT_ATTR);
+  const trimmedStored = (storedOriginal ?? "").trim();
+  const priority = getAccountNamePriority(element);
+
+  if (
+    trimmedCurrent &&
+    trimmedCurrent !== RETAILER_NAME &&
+    trimmedCurrent !== trimmedStored
+  ) {
+    element.setAttribute(ORIGINAL_TEXT_ATTR, currentText);
+    setOriginalAccountName(currentText, element, priority);
+  } else if (trimmedStored && trimmedStored !== RETAILER_NAME) {
+    setOriginalAccountName(storedOriginal, element, priority);
+  } else if (!element.hasAttribute(ORIGINAL_TEXT_ATTR)) {
+    element.setAttribute(ORIGINAL_TEXT_ATTR, currentText);
   }
 
-  const currentText = element.textContent ?? "";
-  if (currentText.trim() === RETAILER_NAME) {
+  if (trimmedCurrent === RETAILER_NAME) {
     return;
   }
 
@@ -112,6 +132,120 @@ function restoreAccountName(element) {
   element.removeAttribute(ORIGINAL_TEXT_ATTR);
 }
 
+function getAccountNamePriority(element) {
+  if (!element || typeof element.matches !== "function") {
+    return 0;
+  }
+
+  if (element.matches(ACCOUNT_NAME_SELECTORS[0])) {
+    return 2;
+  }
+
+  return 1;
+}
+
+function setOriginalAccountName(value, source, priority = 0) {
+  const trimmed = (value ?? "").trim();
+
+  if (!trimmed || trimmed === RETAILER_NAME) {
+    return;
+  }
+
+  const root = document.documentElement;
+  if (
+    originalAccountNameSource &&
+    root &&
+    !root.contains(originalAccountNameSource)
+  ) {
+    originalAccountNameSource = null;
+  }
+
+  const normalizedPriority = Number.isFinite(priority) ? priority : 0;
+  const isSameSource =
+    source && originalAccountNameSource && source === originalAccountNameSource;
+  const sourceIsUnset = originalAccountNameSource === null;
+
+  const shouldUpdate =
+    originalAccountName === null ||
+    normalizedPriority > originalAccountNamePriority ||
+    isSameSource ||
+    (sourceIsUnset && normalizedPriority === originalAccountNamePriority);
+
+  if (!shouldUpdate) {
+    return;
+  }
+
+  if (originalAccountName && originalAccountName !== trimmed) {
+    restoreGlobalAccountNameReplacements();
+  }
+
+  originalAccountName = trimmed;
+  originalAccountNameSource = source ?? originalAccountNameSource;
+  originalAccountNamePriority = normalizedPriority;
+}
+
+function replaceAccountNameInTextNodes() {
+  if (!originalAccountName || originalAccountName === RETAILER_NAME) {
+    return;
+  }
+
+  if (!document.documentElement) {
+    return;
+  }
+
+  const walker = document.createTreeWalker(
+    document.documentElement,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(node) {
+        const parent = node.parentNode;
+
+        if (
+          parent &&
+          EXCLUDED_TEXT_PARENT_NODES.has(parent.nodeName)
+        ) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        const value = node.nodeValue;
+        if (!value || !value.includes(originalAccountName)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }
+  );
+
+  const nodesToUpdate = [];
+  while (walker.nextNode()) {
+    nodesToUpdate.push(walker.currentNode);
+  }
+
+  nodesToUpdate.forEach((node) => {
+    const value = node.nodeValue ?? "";
+    if (!value.includes(originalAccountName)) {
+      return;
+    }
+
+    if (!replacedTextNodes.has(node)) {
+      replacedTextNodes.set(node, value);
+    }
+
+    node.nodeValue = value.split(originalAccountName).join(RETAILER_NAME);
+  });
+}
+
+function restoreGlobalAccountNameReplacements() {
+  replacedTextNodes.forEach((originalValue, node) => {
+    if (node.nodeValue !== originalValue) {
+      node.nodeValue = originalValue;
+    }
+  });
+
+  replacedTextNodes.clear();
+}
+
 function applyLogoCustomizations() {
   const logoElements = document.querySelectorAll(LOGO_SELECTOR);
   logoElements.forEach((element) => ensureCustomLogo(element));
@@ -125,50 +259,16 @@ function restoreLogoCustomizations() {
 function applyAccountNameCustomizations() {
   const accountNameElements = getAccountNameElements();
   accountNameElements.forEach((element) => applyCustomAccountName(element));
-  applyTitleCustomization();
+  replaceAccountNameInTextNodes();
 }
 
 function restoreAccountNameCustomizations() {
   const accountNameElements = getAccountNameElements();
   accountNameElements.forEach((element) => restoreAccountName(element));
-  restoreTitleCustomization();
-}
-
-function applyTitleCustomization() {
-  const titleElement = document.querySelector(TITLE_SELECTOR);
-  if (!titleElement) {
-    return;
-  }
-
-  const currentText = titleElement.textContent ?? "";
-  const colonIndex = currentText.indexOf(TITLE_SEPARATOR);
-
-  if (colonIndex <= 0) {
-    return;
-  }
-
-  const prefix = currentText.slice(0, colonIndex).trim();
-  if (prefix === RETAILER_NAME) {
-    return;
-  }
-
-  if (!titleElement.hasAttribute(ORIGINAL_TITLE_ATTR)) {
-    titleElement.setAttribute(ORIGINAL_TITLE_ATTR, currentText);
-  }
-
-  const suffix = currentText.slice(colonIndex + TITLE_SEPARATOR.length);
-  titleElement.textContent = `${RETAILER_NAME}${TITLE_SEPARATOR}${suffix}`;
-}
-
-function restoreTitleCustomization() {
-  const titleElement = document.querySelector(TITLE_SELECTOR);
-  if (!titleElement || !titleElement.hasAttribute(ORIGINAL_TITLE_ATTR)) {
-    return;
-  }
-
-  const originalTitle = titleElement.getAttribute(ORIGINAL_TITLE_ATTR);
-  titleElement.textContent = originalTitle ?? "";
-  titleElement.removeAttribute(ORIGINAL_TITLE_ATTR);
+  restoreGlobalAccountNameReplacements();
+  originalAccountName = null;
+  originalAccountNamePriority = 0;
+  originalAccountNameSource = null;
 }
 
 function updateCustomizations() {
