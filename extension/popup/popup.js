@@ -3,8 +3,8 @@ const statusElement = document.getElementById("status");
 
 function updateStatus(enabled) {
   statusElement.textContent = enabled
-    ? "The header logo is hidden on supported pages."
-    : "The header logo is visible.";
+    ? "Demo Retailer branding is applied on supported pages."
+    : "Default site branding is shown.";
 }
 
 function applyState(enabled) {

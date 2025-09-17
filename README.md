@@ -1,12 +1,9 @@
 # Demo Header Logo Hider
 
-A local Chrome extension that toggles the visibility of the header logo element
-used in Criteo Retail Media demos. When enabled, it removes any element matching
-the selector:
-
-```
-body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-header > div > mat-toolbar > div.toolbar-left > app-header-logo > img
-```
+A local Chrome extension that applies "Demo Retailer" branding to key elements
+used in Criteo Retail Media demos. When enabled, it replaces the header logo with
+an inline "Demo Retailer" logo and updates the account name text. The original
+content is restored when the toggle is turned off.
 
 ## Getting started
 
@@ -28,11 +25,12 @@ body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-
 
 ## Usage
 
-* Open the extension popup and use the toggle to hide or show the header logo.
+* Open the extension popup and use the toggle to apply or restore the Demo
+  Retailer branding.
 * The setting is stored using `chrome.storage.sync`, so it persists across page
   refreshes and browser restarts.
-* While enabled, a MutationObserver keeps the target element hidden even if the
-  page re-renders dynamically.
+* While enabled, a MutationObserver reapplies the branding even if the page
+  re-renders dynamically.
 
 ## Development notes
 
@@ -40,4 +38,3 @@ body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-
 * Toolbar icons are generated using the Python standard library and stored in
   the `extension/icons/` directory.
 * To update the icons, edit `scripts/generate_icons.py` and run it again.
-
