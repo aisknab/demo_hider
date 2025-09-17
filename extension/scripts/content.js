@@ -4,6 +4,10 @@ const ACCOUNT_NAME_SELECTORS = [
   '[data-test="headerAccountListButtonText"]',
   "span.cds-p1-bold"
 ];
+const RETAILER_COLUMN_CELL_SELECTOR =
+  ".mat-mdc-cell.mdc-data-table__cell.cdk-cell.cdk-column-retailers.mat-column-retailers.ng-star-inserted";
+const RETAILER_COLUMN_TEXT_SELECTOR =
+  `${RETAILER_COLUMN_CELL_SELECTOR} .cds-display-block`;
 const EXCLUDED_TEXT_PARENT_NODES = new Set([
   "SCRIPT",
   "STYLE",
@@ -29,6 +33,7 @@ let originalAccountName = null;
 let originalAccountNamePriority = 0;
 let originalAccountNameSource = null;
 const replacedTextNodes = new Map();
+const retailerCellOriginalContent = new Map();
 
 function getAccountNameElements() {
   const elements = new Set();
@@ -236,6 +241,58 @@ function replaceAccountNameInTextNodes() {
   });
 }
 
+function applyRetailerCellCustomizations() {
+  if (!document || typeof document.querySelectorAll !== "function") {
+    return;
+  }
+
+  const retailerElements = document.querySelectorAll(
+    RETAILER_COLUMN_TEXT_SELECTOR
+  );
+
+  retailerElements.forEach((element) => {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    const textContent = element.textContent ?? "";
+    const trimmedText = textContent.trim();
+
+    if (!trimmedText || trimmedText === RETAILER_NAME) {
+      return;
+    }
+
+    const currentHTML = element.innerHTML;
+    const storedOriginal = retailerCellOriginalContent.get(element);
+
+    if (!storedOriginal || storedOriginal !== currentHTML) {
+      retailerCellOriginalContent.set(element, currentHTML);
+    }
+
+    element.textContent = RETAILER_NAME;
+  });
+
+  retailerCellOriginalContent.forEach((_, element) => {
+    if (!element || !element.isConnected) {
+      retailerCellOriginalContent.delete(element);
+    }
+  });
+}
+
+function restoreRetailerCellCustomizations() {
+  retailerCellOriginalContent.forEach((originalHTML, element) => {
+    if (!element) {
+      return;
+    }
+
+    if (element.isConnected) {
+      element.innerHTML = originalHTML;
+    }
+  });
+
+  retailerCellOriginalContent.clear();
+}
+
 function restoreGlobalAccountNameReplacements() {
   replacedTextNodes.forEach((originalValue, node) => {
     if (node.nodeValue !== originalValue) {
@@ -259,6 +316,7 @@ function restoreLogoCustomizations() {
 function applyAccountNameCustomizations() {
   const accountNameElements = getAccountNameElements();
   accountNameElements.forEach((element) => applyCustomAccountName(element));
+  applyRetailerCellCustomizations();
   replaceAccountNameInTextNodes();
 }
 
@@ -266,6 +324,7 @@ function restoreAccountNameCustomizations() {
   const accountNameElements = getAccountNameElements();
   accountNameElements.forEach((element) => restoreAccountName(element));
   restoreGlobalAccountNameReplacements();
+  restoreRetailerCellCustomizations();
   originalAccountName = null;
   originalAccountNamePriority = 0;
   originalAccountNameSource = null;
