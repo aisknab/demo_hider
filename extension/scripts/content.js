@@ -262,6 +262,10 @@ function applyRetailerCellCustomizations() {
       return;
     }
 
+    if (trimmedText === "-") {
+      return;
+    }
+
     const currentHTML = element.innerHTML;
     const storedOriginal = retailerCellOriginalContent.get(element);
 
