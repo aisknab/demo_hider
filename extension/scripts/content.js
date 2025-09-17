@@ -8,8 +8,12 @@ const LOGO_DATA_URL = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(LOG
 const CUSTOM_LOGO_ATTR = "data-demo-hider-custom-logo";
 const ORIGINAL_TEXT_ATTR = "data-demo-hider-original-text";
 
-let enabled = false;
+const state = {
+  logoEnabled: false,
+  textEnabled: false
+};
 let observer;
+let isInitialized = false;
 const customLogos = new WeakMap();
 
 function ensureCustomLogo(originalElement) {
@@ -84,27 +88,37 @@ function restoreAccountName(element) {
   element.removeAttribute(ORIGINAL_TEXT_ATTR);
 }
 
-function applyCustomizations() {
+function applyLogoCustomizations() {
   const logoElements = document.querySelectorAll(LOGO_SELECTOR);
   logoElements.forEach((element) => ensureCustomLogo(element));
+}
 
+function restoreLogoCustomizations() {
+  const logoElements = document.querySelectorAll(LOGO_SELECTOR);
+  logoElements.forEach((element) => removeCustomLogo(element));
+}
+
+function applyAccountNameCustomizations() {
   const accountNameElements = document.querySelectorAll(ACCOUNT_NAME_SELECTOR);
   accountNameElements.forEach((element) => applyCustomAccountName(element));
 }
 
-function restoreCustomizations() {
-  const logoElements = document.querySelectorAll(LOGO_SELECTOR);
-  logoElements.forEach((element) => removeCustomLogo(element));
-
+function restoreAccountNameCustomizations() {
   const accountNameElements = document.querySelectorAll(ACCOUNT_NAME_SELECTOR);
   accountNameElements.forEach((element) => restoreAccountName(element));
 }
 
-function updateVisibility() {
-  if (enabled) {
-    applyCustomizations();
+function updateCustomizations() {
+  if (state.logoEnabled) {
+    applyLogoCustomizations();
   } else {
-    restoreCustomizations();
+    restoreLogoCustomizations();
+  }
+
+  if (state.textEnabled) {
+    applyAccountNameCustomizations();
+  } else {
+    restoreAccountNameCustomizations();
   }
 }
 
@@ -114,8 +128,12 @@ function ensureObserver() {
   }
 
   observer = new MutationObserver(() => {
-    if (enabled) {
-      applyCustomizations();
+    if (state.logoEnabled) {
+      applyLogoCustomizations();
+    }
+
+    if (state.textEnabled) {
+      applyAccountNameCustomizations();
     }
   });
 
@@ -125,16 +143,59 @@ function ensureObserver() {
   });
 }
 
-function setEnabledState(newState) {
-  enabled = Boolean(newState);
-  updateVisibility();
+function applyState(newState, forceUpdate = false) {
+  const normalizedState = {
+    logoEnabled: Boolean(newState.logoEnabled),
+    textEnabled: Boolean(newState.textEnabled)
+  };
+
+  const hasChanged =
+    normalizedState.logoEnabled !== state.logoEnabled ||
+    normalizedState.textEnabled !== state.textEnabled;
+
+  state.logoEnabled = normalizedState.logoEnabled;
+  state.textEnabled = normalizedState.textEnabled;
+
+  if (hasChanged || forceUpdate) {
+    updateCustomizations();
+  }
+}
+
+function setFeatureState(partial) {
+  const newState = {
+    logoEnabled: state.logoEnabled,
+    textEnabled: state.textEnabled
+  };
+
+  const hasLogo = Object.prototype.hasOwnProperty.call(partial, "logoEnabled");
+  const hasText = Object.prototype.hasOwnProperty.call(partial, "textEnabled");
+
+  if (hasLogo) {
+    newState.logoEnabled = Boolean(partial.logoEnabled);
+  }
+
+  if (hasText) {
+    newState.textEnabled = Boolean(partial.textEnabled);
+  }
+
+  if (!hasLogo && !hasText && Object.prototype.hasOwnProperty.call(partial, "enabled")) {
+    const boolValue = Boolean(partial.enabled);
+    newState.logoEnabled = boolValue;
+    newState.textEnabled = boolValue;
+  }
+
+  applyState(newState, !isInitialized);
+  isInitialized = true;
 }
 
 function initialize() {
   ensureObserver();
-  chrome.storage.sync.get({ enabled: false }, (result) => {
-    setEnabledState(result.enabled);
-  });
+  chrome.storage.sync.get(
+    { logoEnabled: false, textEnabled: false, enabled: false },
+    (result) => {
+      setFeatureState(result);
+    }
+  );
 }
 
 if (document.readyState === "loading") {
@@ -144,14 +205,41 @@ if (document.readyState === "loading") {
 }
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message && Object.prototype.hasOwnProperty.call(message, "enabled")) {
-    setEnabledState(message.enabled);
+  if (
+    message &&
+    (Object.prototype.hasOwnProperty.call(message, "logoEnabled") ||
+      Object.prototype.hasOwnProperty.call(message, "textEnabled") ||
+      Object.prototype.hasOwnProperty.call(message, "enabled"))
+  ) {
+    setFeatureState(message);
   }
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && Object.prototype.hasOwnProperty.call(changes, "enabled")) {
-    setEnabledState(changes.enabled.newValue);
+  if (area !== "sync") {
+    return;
+  }
+
+  const update = {};
+  let hasUpdate = false;
+
+  if (Object.prototype.hasOwnProperty.call(changes, "logoEnabled")) {
+    update.logoEnabled = changes.logoEnabled.newValue;
+    hasUpdate = true;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(changes, "textEnabled")) {
+    update.textEnabled = changes.textEnabled.newValue;
+    hasUpdate = true;
+  }
+
+  if (!hasUpdate && Object.prototype.hasOwnProperty.call(changes, "enabled")) {
+    update.enabled = changes.enabled.newValue;
+    hasUpdate = true;
+  }
+
+  if (hasUpdate) {
+    setFeatureState(update);
   }
 });
 
