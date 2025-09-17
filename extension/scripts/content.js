@@ -1,6 +1,5 @@
 const LOGO_SELECTOR = "body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-header > div > mat-toolbar > div.toolbar-left > app-header-logo > img";
-const ACCOUNT_NAME_SELECTOR =
-  "body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-header > div > mat-toolbar > app-header-right > app-header-account > a.mat-mdc-tooltip-trigger.with-account-name.mdc-button.mat-mdc-button.mat-secondary.mat-mdc-button-base.cds-secondary.ng-star-inserted > span.mdc-button__label > span";
+const ACCOUNT_NAME_SELECTOR = '[data-test="headerAccountListButtonText"]';
 
 const HIDDEN_ATTR = "data-demo-hider-hidden";
 const DISPLAY_VALUE_ATTR = "data-demo-hider-display";
