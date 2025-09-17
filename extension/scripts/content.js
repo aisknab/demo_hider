@@ -1,12 +1,16 @@
+const RETAILER_NAME = "Demo Retailer";
 const LOGO_SELECTOR = "body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-header > div > mat-toolbar > div.toolbar-left > app-header-logo > img";
 const ACCOUNT_NAME_SELECTORS = [
   '[data-test="headerAccountListButtonText"]',
   "span.cds-p1-bold"
 ];
+const TITLE_SELECTOR = "title";
+const TITLE_SEPARATOR = ":";
+const ORIGINAL_TITLE_ATTR = "data-demo-hider-original-title";
 
 const LOGO_WIDTH = 300;
 const LOGO_HEIGHT = 100;
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${LOGO_WIDTH}" height="${LOGO_HEIGHT}" viewBox="0 0 ${LOGO_WIDTH} ${LOGO_HEIGHT}"><rect width="100%" height="100%" fill="white"/><text x="50%" y="50%" fill="#FF6C00" font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="600" dominant-baseline="middle" text-anchor="middle">Demo Retailer</text></svg>`;
+const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${LOGO_WIDTH}" height="${LOGO_HEIGHT}" viewBox="0 0 ${LOGO_WIDTH} ${LOGO_HEIGHT}"><rect width="100%" height="100%" fill="white"/><text x="50%" y="50%" fill="#FF6C00" font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="600" dominant-baseline="middle" text-anchor="middle">${RETAILER_NAME}</text></svg>`;
 const LOGO_DATA_URL = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(LOGO_SVG)}`;
 const CUSTOM_LOGO_ATTR = "data-demo-hider-custom-logo";
 const ORIGINAL_TEXT_ATTR = "data-demo-hider-original-text";
@@ -48,7 +52,7 @@ function ensureCustomLogo(originalElement) {
 
   originalElement.setAttribute("src", LOGO_DATA_URL);
   originalElement.removeAttribute("srcset");
-  originalElement.setAttribute("alt", "Demo Retailer");
+  originalElement.setAttribute("alt", RETAILER_NAME);
   originalElement.setAttribute(CUSTOM_LOGO_ATTR, "true");
 }
 
@@ -91,11 +95,11 @@ function applyCustomAccountName(element) {
   }
 
   const currentText = element.textContent ?? "";
-  if (currentText.trim() === "Demo Retailer") {
+  if (currentText.trim() === RETAILER_NAME) {
     return;
   }
 
-  element.textContent = "Demo Retailer";
+  element.textContent = RETAILER_NAME;
 }
 
 function restoreAccountName(element) {
@@ -121,11 +125,50 @@ function restoreLogoCustomizations() {
 function applyAccountNameCustomizations() {
   const accountNameElements = getAccountNameElements();
   accountNameElements.forEach((element) => applyCustomAccountName(element));
+  applyTitleCustomization();
 }
 
 function restoreAccountNameCustomizations() {
   const accountNameElements = getAccountNameElements();
   accountNameElements.forEach((element) => restoreAccountName(element));
+  restoreTitleCustomization();
+}
+
+function applyTitleCustomization() {
+  const titleElement = document.querySelector(TITLE_SELECTOR);
+  if (!titleElement) {
+    return;
+  }
+
+  const currentText = titleElement.textContent ?? "";
+  const colonIndex = currentText.indexOf(TITLE_SEPARATOR);
+
+  if (colonIndex <= 0) {
+    return;
+  }
+
+  const prefix = currentText.slice(0, colonIndex).trim();
+  if (prefix === RETAILER_NAME) {
+    return;
+  }
+
+  if (!titleElement.hasAttribute(ORIGINAL_TITLE_ATTR)) {
+    titleElement.setAttribute(ORIGINAL_TITLE_ATTR, currentText);
+  }
+
+  const suffix = currentText.slice(colonIndex + TITLE_SEPARATOR.length);
+  titleElement.textContent = `${RETAILER_NAME}${TITLE_SEPARATOR}${suffix}`;
+}
+
+function restoreTitleCustomization() {
+  const titleElement = document.querySelector(TITLE_SELECTOR);
+  if (!titleElement || !titleElement.hasAttribute(ORIGINAL_TITLE_ATTR)) {
+    return;
+  }
+
+  const originalTitle = titleElement.getAttribute(ORIGINAL_TITLE_ATTR);
+  titleElement.textContent = originalTitle ?? "";
+  titleElement.removeAttribute(ORIGINAL_TITLE_ATTR);
 }
 
 function updateCustomizations() {
@@ -157,9 +200,10 @@ function ensureObserver() {
     }
   });
 
-  observer.observe(document.body, {
+  observer.observe(document.documentElement, {
     childList: true,
-    subtree: true
+    subtree: true,
+    characterData: true
   });
 }
 
