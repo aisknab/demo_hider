@@ -11,15 +11,19 @@ body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-
 ## Getting started
 
 1. Generate the toolbar icons (they are excluded from the repository so that no
-   binary assets are committed):
+   binary assets are committed). Use the Python interpreter available on your
+   system — on macOS/Linux it is often `python3`:
 
    ```bash
-   python scripts/generate_icons.py
+   python3 scripts/generate_icons.py
    ```
 
 2. In Chrome, open `chrome://extensions`, enable **Developer mode**, and choose
    **Load unpacked**.
-3. Select the `extension` folder from this repository.
+
+3. Select the root folder of this repository (the directory that contains this
+   README and `manifest.json`).
+
 4. Pin the “Demo Header Logo Hider” action if desired.
 
 ## Usage

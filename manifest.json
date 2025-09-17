@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Demo Header Logo Hider",
+  "description": "Toggle hiding of the demo header logo element by selector for local presentations.",
+  "version": "1.0.0",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "extension/popup/popup.html",
+    "default_icon": {
+      "16": "extension/icons/inactive-16.png",
+      "32": "extension/icons/inactive-32.png",
+      "48": "extension/icons/inactive-48.png",
+      "128": "extension/icons/inactive-128.png"
+    }
+  },
+  "icons": {
+    "16": "extension/icons/inactive-16.png",
+    "32": "extension/icons/inactive-32.png",
+    "48": "extension/icons/inactive-48.png",
+    "128": "extension/icons/inactive-128.png"
+  },
+  "background": {
+    "service_worker": "extension/background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "extension/scripts/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
