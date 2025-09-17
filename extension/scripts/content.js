@@ -4,8 +4,7 @@ const ACCOUNT_NAME_SELECTORS = [
   '[data-test="headerAccountListButtonText"]',
   "span.cds-p1-bold"
 ];
-const RETAILER_COLUMN_CELL_SELECTOR =
-  ".mat-mdc-cell.mdc-data-table__cell.cdk-cell.cdk-column-retailers.mat-column-retailers.ng-star-inserted";
+const RETAILER_COLUMN_CELL_SELECTOR = "[class*='column-retailers']";
 const RETAILER_COLUMN_TEXT_SELECTOR =
   `${RETAILER_COLUMN_CELL_SELECTOR} .cds-display-block`;
 const EXCLUDED_TEXT_PARENT_NODES = new Set([
