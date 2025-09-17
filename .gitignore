@@ -1,1 +1,1 @@
-extension/icons/*.png
+# Intentionally left blank. Toolbar icons are generated at runtime to avoid committing binaries.
