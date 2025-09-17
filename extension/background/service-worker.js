@@ -1,15 +1,15 @@
 const ICON_PATHS = {
   enabled: {
-    16: "icons/active-16.png",
-    32: "icons/active-32.png",
-    48: "icons/active-48.png",
-    128: "icons/active-128.png"
+    16: "extension/icons/active-16.png",
+    32: "extension/icons/active-32.png",
+    48: "extension/icons/active-48.png",
+    128: "extension/icons/active-128.png"
   },
   disabled: {
-    16: "icons/inactive-16.png",
-    32: "icons/inactive-32.png",
-    48: "icons/inactive-48.png",
-    128: "icons/inactive-128.png"
+    16: "extension/icons/inactive-16.png",
+    32: "extension/icons/inactive-32.png",
+    48: "extension/icons/inactive-48.png",
+    128: "extension/icons/inactive-128.png"
   }
 };
 
