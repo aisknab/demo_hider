@@ -6,7 +6,7 @@ const ACCOUNT_NAME_SELECTORS = [
 ];
 const RETAILER_COLUMN_CELL_SELECTOR = "[class*='column-retailers']";
 const RETAILER_COLUMN_TEXT_SELECTOR =
-  `${RETAILER_COLUMN_CELL_SELECTOR} .cds-display-block`;
+  `${RETAILER_COLUMN_CELL_SELECTOR} .cds-display-block, ${RETAILER_COLUMN_CELL_SELECTOR} app-show-more-popover`;
 const EXCLUDED_TEXT_PARENT_NODES = new Set([
   "SCRIPT",
   "STYLE",
@@ -33,6 +33,137 @@ let originalAccountNamePriority = 0;
 let originalAccountNameSource = null;
 const replacedTextNodes = new Map();
 const retailerCellOriginalContent = new Map();
+const RETAILER_CELL_PROPERTY_NAMES = ["text", "tooltip", "value"];
+
+function createRetailerCellSnapshot(element, originalText) {
+  const attributes = {};
+  Array.from(element.attributes).forEach((attribute) => {
+    attributes[attribute.name] = attribute.value;
+  });
+
+  const properties = {};
+  RETAILER_CELL_PROPERTY_NAMES.forEach((propertyName) => {
+    const value = element[propertyName];
+    if (typeof value === "string") {
+      properties[propertyName] = value;
+    }
+  });
+
+  return {
+    html: element.innerHTML,
+    attributes,
+    properties,
+    originalText: originalText ?? ""
+  };
+}
+
+function restoreRetailerCellFromSnapshot(element, snapshot) {
+  if (!element || !snapshot) {
+    return;
+  }
+
+  if (typeof snapshot === "string") {
+    element.innerHTML = snapshot;
+    return;
+  }
+
+  element.innerHTML = snapshot.html ?? "";
+
+  if (snapshot.attributes && typeof snapshot.attributes === "object") {
+    Object.keys(snapshot.attributes).forEach((name) => {
+      const value = snapshot.attributes[name];
+
+      if (value === null || typeof value === "undefined") {
+        element.removeAttribute(name);
+      } else {
+        element.setAttribute(name, value);
+      }
+    });
+  }
+
+  if (snapshot.properties && typeof snapshot.properties === "object") {
+    Object.keys(snapshot.properties).forEach((propertyName) => {
+      const value = snapshot.properties[propertyName];
+
+      if (typeof value !== "string") {
+        return;
+      }
+
+      try {
+        element[propertyName] = value;
+      } catch (error) {
+        // Ignore read-only property assignments.
+      }
+    });
+  }
+}
+
+function getRetailerTextVariants(value) {
+  const variants = new Set();
+  const normalized = typeof value === "string" ? value : "";
+
+  if (normalized) {
+    variants.add(normalized);
+  }
+
+  const trimmed = normalized.trim();
+
+  if (trimmed && trimmed !== normalized) {
+    variants.add(trimmed);
+  }
+
+  return Array.from(variants);
+}
+
+function applyRetailerCellReplacement(element, originalText) {
+  element.textContent = RETAILER_NAME;
+
+  const variants = getRetailerTextVariants(originalText);
+
+  if (variants.length === 0) {
+    return;
+  }
+
+  Array.from(element.attributes).forEach((attribute) => {
+    let updatedValue = attribute.value ?? "";
+
+    variants.forEach((variant) => {
+      if (!variant || !updatedValue.includes(variant)) {
+        return;
+      }
+
+      updatedValue = updatedValue.split(variant).join(RETAILER_NAME);
+    });
+
+    if (updatedValue !== attribute.value) {
+      element.setAttribute(attribute.name, updatedValue);
+    }
+  });
+
+  RETAILER_CELL_PROPERTY_NAMES.forEach((propertyName) => {
+    let value = element[propertyName];
+
+    if (typeof value !== "string") {
+      return;
+    }
+
+    variants.forEach((variant) => {
+      if (!variant || !value.includes(variant)) {
+        return;
+      }
+
+      value = value.split(variant).join(RETAILER_NAME);
+    });
+
+    if (value !== element[propertyName]) {
+      try {
+        element[propertyName] = value;
+      } catch (error) {
+        // Ignore read-only property assignments.
+      }
+    }
+  });
+}
 
 function getAccountNameElements() {
   const elements = new Set();
@@ -268,11 +399,19 @@ function applyRetailerCellCustomizations() {
     const currentHTML = element.innerHTML;
     const storedOriginal = retailerCellOriginalContent.get(element);
 
-    if (!storedOriginal || storedOriginal !== currentHTML) {
-      retailerCellOriginalContent.set(element, currentHTML);
+    if (
+      !storedOriginal ||
+      typeof storedOriginal !== "object" ||
+      storedOriginal.html !== currentHTML ||
+      storedOriginal.originalText !== trimmedText
+    ) {
+      retailerCellOriginalContent.set(
+        element,
+        createRetailerCellSnapshot(element, trimmedText)
+      );
     }
 
-    element.textContent = RETAILER_NAME;
+    applyRetailerCellReplacement(element, trimmedText);
   });
 
   retailerCellOriginalContent.forEach((_, element) => {
@@ -283,13 +422,13 @@ function applyRetailerCellCustomizations() {
 }
 
 function restoreRetailerCellCustomizations() {
-  retailerCellOriginalContent.forEach((originalHTML, element) => {
+  retailerCellOriginalContent.forEach((snapshot, element) => {
     if (!element) {
       return;
     }
 
     if (element.isConnected) {
-      element.innerHTML = originalHTML;
+      restoreRetailerCellFromSnapshot(element, snapshot);
     }
   });
 
