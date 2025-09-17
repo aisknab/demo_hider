@@ -7,21 +7,13 @@ content is restored when the toggle is turned off.
 
 ## Getting started
 
-1. Generate the toolbar icons (they are excluded from the repository so that no
-   binary assets are committed). Use the Python interpreter available on your
-   system — on macOS/Linux it is often `python3`:
-
-   ```bash
-   python3 scripts/generate_icons.py
-   ```
-
-2. In Chrome, open `chrome://extensions`, enable **Developer mode**, and choose
+1. In Chrome, open `chrome://extensions`, enable **Developer mode**, and choose
    **Load unpacked**.
 
-3. Select the root folder of this repository (the directory that contains this
+2. Select the root folder of this repository (the directory that contains this
    README and `manifest.json`).
 
-4. Pin the “Demo Header Logo Hider” action if desired.
+3. Pin the “Demo Header Logo Hider” action if desired.
 
 ## Usage
 
@@ -35,6 +27,5 @@ content is restored when the toggle is turned off.
 ## Development notes
 
 * The repository purposefully avoids third-party dependencies.
-* Toolbar icons are generated using the Python standard library and stored in
-  the `extension/icons/` directory.
-* To update the icons, edit `scripts/generate_icons.py` and run it again.
+* Toolbar icons are generated dynamically by the background service worker so no
+  binary assets need to be checked into version control.

@@ -1,17 +1,122 @@
-const ICON_PATHS = {
+const ICON_SIZES = [16, 32, 48, 128];
+const ICON_THEME = {
   enabled: {
-    16: "extension/icons/active-16.png",
-    32: "extension/icons/active-32.png",
-    48: "extension/icons/active-48.png",
-    128: "extension/icons/active-128.png"
+    background: "#199E4D",
+    glyph: "#FFFFFF"
   },
   disabled: {
-    16: "extension/icons/inactive-16.png",
-    32: "extension/icons/inactive-32.png",
-    48: "extension/icons/inactive-48.png",
-    128: "extension/icons/inactive-128.png"
+    background: "#6C757D",
+    glyph: "#FFFFFF"
   }
 };
+
+const ICON_PIXEL_CACHE = (() => {
+  function hexToRgbaTuple(hex) {
+    let normalized = String(hex).trim();
+    if (normalized.startsWith("#")) {
+      normalized = normalized.slice(1);
+    }
+
+    if (normalized.length === 3) {
+      normalized = normalized
+        .split("")
+        .map((char) => char + char)
+        .join("");
+    }
+
+    const value = parseInt(normalized, 16);
+    return [
+      (value >> 16) & 0xff,
+      (value >> 8) & 0xff,
+      value & 0xff,
+      255
+    ];
+  }
+
+  function createSolidIconPixels(background, size) {
+    const [red, green, blue, alpha] = hexToRgbaTuple(background);
+    const pixels = new Uint8ClampedArray(size * size * 4);
+
+    for (let index = 0; index < pixels.length; index += 4) {
+      pixels[index] = red;
+      pixels[index + 1] = green;
+      pixels[index + 2] = blue;
+      pixels[index + 3] = alpha;
+    }
+
+    return pixels;
+  }
+
+  function drawIconPixels(background, glyph, size) {
+    if (typeof OffscreenCanvas === "undefined") {
+      return createSolidIconPixels(background, size);
+    }
+
+    const canvas = new OffscreenCanvas(size, size);
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return createSolidIconPixels(background, size);
+    }
+
+    context.clearRect(0, 0, size, size);
+    context.fillStyle = background;
+    context.fillRect(0, 0, size, size);
+
+    const fontSize = Math.floor(size * 0.65);
+    context.fillStyle = glyph;
+    context.font = `600 ${fontSize}px "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText("D", size / 2, size / 2 + size * 0.05);
+
+    return new Uint8ClampedArray(context.getImageData(0, 0, size, size).data);
+  }
+
+  const cache = { enabled: {}, disabled: {} };
+
+  Object.keys(ICON_THEME).forEach((stateKey) => {
+    const colors = ICON_THEME[stateKey];
+
+    ICON_SIZES.forEach((size) => {
+      cache[stateKey][size] = drawIconPixels(colors.background, colors.glyph, size);
+    });
+  });
+
+  return cache;
+})();
+
+function createImageDataFromPixels(pixels, size) {
+  const data = new Uint8ClampedArray(pixels);
+
+  if (typeof ImageData === "function") {
+    return new ImageData(data, size, size);
+  }
+
+  if (typeof OffscreenCanvas !== "undefined") {
+    const canvas = new OffscreenCanvas(size, size);
+    const context = canvas.getContext("2d");
+
+    if (context) {
+      const imageData = context.createImageData(size, size);
+      imageData.data.set(data);
+      return imageData;
+    }
+  }
+
+  throw new Error("Unable to construct ImageData for toolbar icon rendering.");
+}
+
+function getIconImageData(enabled) {
+  const key = enabled ? "enabled" : "disabled";
+  const images = {};
+
+  ICON_SIZES.forEach((size) => {
+    images[size] = createImageDataFromPixels(ICON_PIXEL_CACHE[key][size], size);
+  });
+
+  return images;
+}
 
 const STORAGE_DEFAULTS = {
   logoEnabled: false,
@@ -20,8 +125,13 @@ const STORAGE_DEFAULTS = {
 };
 
 function setIcon(enabled) {
-  const path = enabled ? ICON_PATHS.enabled : ICON_PATHS.disabled;
-  chrome.action.setIcon({ path });
+  const imageData = getIconImageData(enabled);
+
+  chrome.action.setIcon({ imageData }, () => {
+    if (chrome.runtime.lastError) {
+      console.error("Failed to update toolbar icon", chrome.runtime.lastError);
+    }
+  });
 }
 
 function resolveBrandingEnabled(value) {
@@ -101,4 +211,5 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+setIcon(false);
 syncIconWithStorage();

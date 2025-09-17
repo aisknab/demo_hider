@@ -10,19 +10,7 @@
     "<all_urls>"
   ],
   "action": {
-    "default_popup": "extension/popup/popup.html",
-    "default_icon": {
-      "16": "extension/icons/inactive-16.png",
-      "32": "extension/icons/inactive-32.png",
-      "48": "extension/icons/inactive-48.png",
-      "128": "extension/icons/inactive-128.png"
-    }
-  },
-  "icons": {
-    "16": "extension/icons/inactive-16.png",
-    "32": "extension/icons/inactive-32.png",
-    "48": "extension/icons/inactive-48.png",
-    "128": "extension/icons/inactive-128.png"
+    "default_popup": "extension/popup/popup.html"
   },
   "background": {
     "service_worker": "extension/background/service-worker.js"

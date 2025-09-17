@@ -1,5 +1,8 @@
 const LOGO_SELECTOR = "body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-header > div > mat-toolbar > div.toolbar-left > app-header-logo > img";
-const ACCOUNT_NAME_SELECTOR = '[data-test="headerAccountListButtonText"]';
+const ACCOUNT_NAME_SELECTORS = [
+  '[data-test="headerAccountListButtonText"]',
+  "span.cds-p1-bold"
+];
 
 const LOGO_WIDTH = 300;
 const LOGO_HEIGHT = 100;
@@ -15,6 +18,18 @@ const state = {
 let observer;
 let isInitialized = false;
 const customLogos = new WeakMap();
+
+function getAccountNameElements() {
+  const elements = new Set();
+
+  ACCOUNT_NAME_SELECTORS.forEach((selector) => {
+    document.querySelectorAll(selector).forEach((element) => {
+      elements.add(element);
+    });
+  });
+
+  return Array.from(elements);
+}
 
 function ensureCustomLogo(originalElement) {
   if (!originalElement) {
@@ -75,7 +90,8 @@ function applyCustomAccountName(element) {
     element.setAttribute(ORIGINAL_TEXT_ATTR, originalText);
   }
 
-  if (element.textContent === "Demo Retailer") {
+  const currentText = element.textContent ?? "";
+  if (currentText.trim() === "Demo Retailer") {
     return;
   }
 
@@ -103,12 +119,12 @@ function restoreLogoCustomizations() {
 }
 
 function applyAccountNameCustomizations() {
-  const accountNameElements = document.querySelectorAll(ACCOUNT_NAME_SELECTOR);
+  const accountNameElements = getAccountNameElements();
   accountNameElements.forEach((element) => applyCustomAccountName(element));
 }
 
 function restoreAccountNameCustomizations() {
-  const accountNameElements = document.querySelectorAll(ACCOUNT_NAME_SELECTOR);
+  const accountNameElements = getAccountNameElements();
   accountNameElements.forEach((element) => restoreAccountName(element));
 }
 
