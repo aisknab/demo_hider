@@ -20,8 +20,10 @@ body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-
 
 2. In Chrome, open `chrome://extensions`, enable **Developer mode**, and choose
    **Load unpacked**.
+
 3. Select the root folder of this repository (the directory that contains this
    README and `manifest.json`).
+
 4. Pin the “Demo Header Logo Hider” action if desired.
 
 ## Usage
