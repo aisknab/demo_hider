@@ -75,6 +75,10 @@ function applyCustomAccountName(element) {
     element.setAttribute(ORIGINAL_TEXT_ATTR, originalText);
   }
 
+  if (element.textContent === "Demo Retailer") {
+    return;
+  }
+
   element.textContent = "Demo Retailer";
 }
 
