@@ -115,6 +115,22 @@ function getRetailerTextVariants(value) {
   return Array.from(variants);
 }
 
+function buildRetailerCellVariants(originalText) {
+  const variants = new Set();
+
+  if (originalAccountName && originalAccountName !== RETAILER_NAME) {
+    getRetailerTextVariants(originalAccountName).forEach((variant) => {
+      variants.add(variant);
+    });
+  }
+
+  getRetailerTextVariants(originalText).forEach((variant) => {
+    variants.add(variant);
+  });
+
+  return Array.from(variants);
+}
+
 function replaceRetailerTextNodes(element, variants) {
   if (!element) {
     return false;
@@ -190,7 +206,7 @@ function updateRetailerCellProperties(element, variants) {
 }
 
 function applyRetailerCellReplacement(element, originalText) {
-  const variants = getRetailerTextVariants(originalText);
+  const variants = buildRetailerCellVariants(originalText);
 
   let hasReplacedText = false;
 
@@ -202,6 +218,10 @@ function applyRetailerCellReplacement(element, originalText) {
     const currentText = element.textContent ?? "";
 
     if (currentText.trim() !== RETAILER_NAME) {
+      // No descendant text nodes matched any of the known variants, so replace
+      // the entire cell contents as a fallback. This differs from the standard
+      // replacement rule where only occurrences of the original retailer name
+      // are updated.
       element.textContent = RETAILER_NAME;
     }
   }
