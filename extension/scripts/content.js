@@ -5,9 +5,10 @@ const ACCOUNT_NAME_SELECTORS = [
   "span.cds-p1-bold"
 ];
 const RETAILER_COLUMN_CELL_SELECTOR = "[class*='column-retailers']";
+const SHOW_MORE_POPOVER_SELECTOR = "app-show-more-popover";
 const RETAILER_COLUMN_TEXT_DESCENDANT_SELECTORS = [
   ".cds-display-block",
-  "app-show-more-popover"
+  SHOW_MORE_POPOVER_SELECTOR
 ];
 const RETAILER_COLUMN_TEXT_DESCENDANT_SELECTOR =
   RETAILER_COLUMN_TEXT_DESCENDANT_SELECTORS.join(", ");
@@ -41,7 +42,45 @@ let originalAccountNamePriority = 0;
 let originalAccountNameSource = null;
 const replacedTextNodes = new Map();
 const retailerCellOriginalContent = new Map();
-const RETAILER_CELL_PROPERTY_NAMES = ["text", "tooltip", "value"];
+const RETAILER_CELL_TEXT_PROPERTY_NAMES = [
+  "text",
+  "tooltip",
+  "value",
+  "content",
+  "popoverText",
+  "popoverTitle",
+  "popoverContent",
+  "title",
+  "label"
+];
+const RETAILER_CELL_TEXT_ATTRIBUTE_NAMES = new Set([
+  "text",
+  "tooltip",
+  "title",
+  "aria-label",
+  "data-tooltip",
+  "data-tooltip-text",
+  "data-popover",
+  "data-popover-content",
+  "data-title",
+  "data-label",
+  "data-content",
+  "data-description",
+  "ng-reflect-text",
+  "ng-reflect-tooltip",
+  "ng-reflect-tooltip-text",
+  "ng-reflect-title",
+  "ng-reflect-content"
+]);
+const RETAILER_CELL_TEXT_ATTRIBUTE_TOKENS = new Set([
+  "text",
+  "tooltip",
+  "title",
+  "label",
+  "content",
+  "description",
+  "popover"
+]);
 
 function createRetailerCellSnapshot(element, originalText) {
   const attributes = {};
@@ -50,7 +89,7 @@ function createRetailerCellSnapshot(element, originalText) {
   });
 
   const properties = {};
-  RETAILER_CELL_PROPERTY_NAMES.forEach((propertyName) => {
+  RETAILER_CELL_TEXT_PROPERTY_NAMES.forEach((propertyName) => {
     const value = element[propertyName];
     if (typeof value === "string") {
       properties[propertyName] = value;
@@ -123,7 +162,129 @@ function getRetailerTextVariants(value) {
   return Array.from(variants);
 }
 
-function buildRetailerCellVariants(originalText) {
+function isTextualAttributeName(name) {
+  if (!name) {
+    return false;
+  }
+
+  const normalized = name.toLowerCase();
+
+  if (RETAILER_CELL_TEXT_ATTRIBUTE_NAMES.has(normalized)) {
+    return true;
+  }
+
+  if (normalized.includes("tooltip") || normalized.includes("popover")) {
+    return true;
+  }
+
+  if (
+    /(?:^|[-_:])(text|title|label|content|description)(?:$|[-_:])/.test(
+      normalized
+    )
+  ) {
+    return true;
+  }
+
+  const tokens = normalized.split(/[-_:]+/);
+
+  return tokens.some((token) => RETAILER_CELL_TEXT_ATTRIBUTE_TOKENS.has(token));
+}
+
+function getElementTextAttributeValues(element) {
+  if (!element || !element.attributes) {
+    return [];
+  }
+
+  const values = [];
+
+  Array.from(element.attributes).forEach((attribute) => {
+    if (!attribute) {
+      return;
+    }
+
+    const value = attribute.value;
+
+    if (typeof value !== "string" || value === "") {
+      return;
+    }
+
+    if (!isTextualAttributeName(attribute.name)) {
+      return;
+    }
+
+    values.push(value);
+  });
+
+  return values;
+}
+
+function getElementTextPropertyValues(element) {
+  if (!element) {
+    return [];
+  }
+
+  const values = [];
+
+  RETAILER_CELL_TEXT_PROPERTY_NAMES.forEach((propertyName) => {
+    const value = element[propertyName];
+
+    if (typeof value !== "string" || value === "") {
+      return;
+    }
+
+    values.push(value);
+  });
+
+  return values;
+}
+
+function collectRetailerCellTextInfo(element) {
+  const textContent = element.textContent ?? "";
+  const trimmedText = textContent.trim();
+  const attributeValues = getElementTextAttributeValues(element);
+  const propertyValues = getElementTextPropertyValues(element);
+
+  const hasAttributeText = attributeValues.some((value) => {
+    const normalized = value.trim();
+    return normalized && normalized !== RETAILER_NAME;
+  });
+
+  const hasPropertyText = propertyValues.some((value) => {
+    const normalized = value.trim();
+    return normalized && normalized !== RETAILER_NAME;
+  });
+
+  const hasTextContent =
+    trimmedText && trimmedText !== RETAILER_NAME ? true : false;
+
+  const hasOriginalText = hasTextContent || hasAttributeText || hasPropertyText;
+
+  let fallbackText = trimmedText;
+
+  if (!fallbackText) {
+    const attributeText = attributeValues.find((value) => value && value.trim());
+    if (attributeText) {
+      fallbackText = attributeText.trim();
+    }
+  }
+
+  if (!fallbackText) {
+    const propertyText = propertyValues.find((value) => value && value.trim());
+    if (propertyText) {
+      fallbackText = propertyText.trim();
+    }
+  }
+
+  return {
+    trimmedText,
+    attributeValues,
+    propertyValues,
+    hasOriginalText,
+    fallbackText: fallbackText ?? ""
+  };
+}
+
+function buildRetailerCellVariants(originalText, element, textInfo) {
   const variants = new Set();
 
   if (originalAccountName && originalAccountName !== RETAILER_NAME) {
@@ -135,6 +296,26 @@ function buildRetailerCellVariants(originalText) {
   getRetailerTextVariants(originalText).forEach((variant) => {
     variants.add(variant);
   });
+
+  const addValuesToVariants = (values) => {
+    if (!Array.isArray(values)) {
+      return;
+    }
+
+    values.forEach((value) => {
+      getRetailerTextVariants(value).forEach((variant) => {
+        variants.add(variant);
+      });
+    });
+  };
+
+  if (textInfo && typeof textInfo === "object") {
+    addValuesToVariants(textInfo.attributeValues);
+    addValuesToVariants(textInfo.propertyValues);
+  } else if (element instanceof HTMLElement) {
+    addValuesToVariants(getElementTextAttributeValues(element));
+    addValuesToVariants(getElementTextPropertyValues(element));
+  }
 
   return Array.from(variants);
 }
@@ -188,7 +369,7 @@ function updateRetailerCellAttributes(element, variants) {
 }
 
 function updateRetailerCellProperties(element, variants) {
-  RETAILER_CELL_PROPERTY_NAMES.forEach((propertyName) => {
+  RETAILER_CELL_TEXT_PROPERTY_NAMES.forEach((propertyName) => {
     let value = element[propertyName];
 
     if (typeof value !== "string") {
@@ -213,8 +394,8 @@ function updateRetailerCellProperties(element, variants) {
   });
 }
 
-function applyRetailerCellReplacement(element, originalText) {
-  const variants = buildRetailerCellVariants(originalText);
+function applyRetailerCellReplacement(element, originalText, textInfo) {
+  const variants = buildRetailerCellVariants(originalText, element, textInfo);
 
   let hasReplacedText = false;
 
@@ -225,7 +406,7 @@ function applyRetailerCellReplacement(element, originalText) {
   if (!hasReplacedText) {
     const currentText = element.textContent ?? "";
 
-    if (currentText.trim() !== RETAILER_NAME) {
+    if (originalText && originalText.trim() && currentText.trim() !== RETAILER_NAME) {
       // No descendant text nodes matched any of the known variants, so replace
       // the entire cell contents as a fallback. This differs from the standard
       // replacement rule where only occurrences of the original retailer name
@@ -453,33 +634,52 @@ function processRetailerCellElement(element) {
     return false;
   }
 
-  const textContent = element.textContent ?? "";
-  const trimmedText = textContent.trim();
+  const textInfo = collectRetailerCellTextInfo(element);
 
-  if (!trimmedText || trimmedText === RETAILER_NAME) {
+  if (!textInfo.hasOriginalText) {
     return false;
   }
 
-  if (trimmedText === "-") {
+  const normalizedFallback = (textInfo.fallbackText ?? "").trim();
+
+  if (textInfo.trimmedText === "-" || normalizedFallback === "-") {
     return false;
   }
 
   const currentHTML = element.innerHTML;
   const storedOriginal = retailerCellOriginalContent.get(element);
 
-  if (
-    !storedOriginal ||
-    typeof storedOriginal !== "object" ||
-    storedOriginal.html !== currentHTML ||
-    storedOriginal.originalText !== trimmedText
-  ) {
+  const elementContainsRetailerName =
+    typeof currentHTML === "string" && currentHTML.includes(RETAILER_NAME);
+
+  let shouldUpdateSnapshot = false;
+
+  if (!storedOriginal || typeof storedOriginal !== "object") {
+    shouldUpdateSnapshot = true;
+  } else {
+    const storedOriginalText =
+      typeof storedOriginal.originalText === "string"
+        ? storedOriginal.originalText
+        : "";
+
+    const isNewOriginalText =
+      normalizedFallback &&
+      normalizedFallback !== RETAILER_NAME &&
+      normalizedFallback !== storedOriginalText;
+
+    if (isNewOriginalText && !elementContainsRetailerName) {
+      shouldUpdateSnapshot = true;
+    }
+  }
+
+  if (shouldUpdateSnapshot) {
     retailerCellOriginalContent.set(
       element,
-      createRetailerCellSnapshot(element, trimmedText)
+      createRetailerCellSnapshot(element, normalizedFallback)
     );
   }
 
-  applyRetailerCellReplacement(element, trimmedText);
+  applyRetailerCellReplacement(element, normalizedFallback, textInfo);
   return true;
 }
 
@@ -487,6 +687,16 @@ function applyRetailerCellCustomizations() {
   if (!document || typeof document.querySelectorAll !== "function") {
     return;
   }
+
+  const popoverElements = document.querySelectorAll(SHOW_MORE_POPOVER_SELECTOR);
+
+  popoverElements.forEach((element) => {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    processRetailerCellElement(element);
+  });
 
   const retailerCells = document.querySelectorAll(RETAILER_COLUMN_CELL_SELECTOR);
 
