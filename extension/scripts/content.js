@@ -27,7 +27,11 @@ const LOGO_WIDTH = 300;
 const LOGO_HEIGHT = 100;
 const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${LOGO_WIDTH}" height="${LOGO_HEIGHT}" viewBox="0 0 ${LOGO_WIDTH} ${LOGO_HEIGHT}"><rect width="100%" height="100%" fill="white"/><text x="50%" y="50%" fill="#FF6C00" font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="600" dominant-baseline="middle" text-anchor="middle">${RETAILER_NAME}</text></svg>`;
 const LOGO_DATA_URL = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(LOGO_SVG)}`;
+const FAVICON_SVG =
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"64\" viewBox=\"0 0 64 64\"><rect width=\"64\" height=\"64\" rx=\"12\" ry=\"12\" fill=\"#FF6C00\"/><text x=\"50%\" y=\"50%\" fill=\"#FFFFFF\" font-family=\"Segoe UI, Arial, sans-serif\" font-size=\"36\" font-weight=\"600\" text-anchor=\"middle\" dominant-baseline=\"central\">D</text></svg>";
+const FAVICON_DATA_URL = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(FAVICON_SVG)}`;
 const CUSTOM_LOGO_ATTR = "data-demo-hider-custom-logo";
+const CUSTOM_FAVICON_ATTR = "data-demo-hider-custom-favicon";
 const ORIGINAL_TEXT_ATTR = "data-demo-hider-original-text";
 
 const state = {
@@ -37,6 +41,8 @@ const state = {
 let observer;
 let isInitialized = false;
 const customLogos = new WeakMap();
+const originalFavicons = new Map();
+let injectedFaviconLink = null;
 let originalAccountName = null;
 let originalAccountNamePriority = 0;
 let originalAccountNameSource = null;
@@ -456,6 +462,124 @@ function ensureCustomLogo(originalElement) {
   originalElement.setAttribute(CUSTOM_LOGO_ATTR, "true");
 }
 
+function getFaviconLinkElements() {
+  if (!document.head) {
+    return [];
+  }
+
+  return Array.from(document.head.querySelectorAll("link[rel~=\"icon\" i]"));
+}
+
+function rememberOriginalFaviconAttributes(element) {
+  if (
+    !element ||
+    originalFavicons.has(element) ||
+    element.hasAttribute(CUSTOM_FAVICON_ATTR)
+  ) {
+    return;
+  }
+
+  originalFavicons.set(element, {
+    href: element.getAttribute("href"),
+    type: element.getAttribute("type")
+  });
+}
+
+function ensureCustomFavicon(element) {
+  if (!element) {
+    return;
+  }
+
+  rememberOriginalFaviconAttributes(element);
+  element.setAttribute("href", FAVICON_DATA_URL);
+  element.setAttribute("type", "image/svg+xml");
+  element.setAttribute(CUSTOM_FAVICON_ATTR, "true");
+}
+
+function ensureInjectedFaviconLink() {
+  if (!document.head) {
+    return;
+  }
+
+  if (injectedFaviconLink && injectedFaviconLink.isConnected) {
+    return;
+  }
+
+  if (!injectedFaviconLink) {
+    injectedFaviconLink = document.createElement("link");
+    injectedFaviconLink.setAttribute("rel", "icon");
+    injectedFaviconLink.setAttribute("type", "image/svg+xml");
+    injectedFaviconLink.setAttribute("href", FAVICON_DATA_URL);
+    injectedFaviconLink.setAttribute(CUSTOM_FAVICON_ATTR, "true");
+  }
+
+  document.head.appendChild(injectedFaviconLink);
+}
+
+function removeInjectedFaviconLink() {
+  if (!injectedFaviconLink) {
+    return;
+  }
+
+  if (injectedFaviconLink.isConnected) {
+    injectedFaviconLink.remove();
+  }
+
+  injectedFaviconLink = null;
+}
+
+function applyFaviconCustomizations() {
+  if (!document.head) {
+    return;
+  }
+
+  const faviconElements = getFaviconLinkElements();
+  const nonInjectedElements = faviconElements.filter(
+    (element) => element !== injectedFaviconLink
+  );
+
+  if (nonInjectedElements.length === 0) {
+    ensureInjectedFaviconLink();
+    return;
+  }
+
+  nonInjectedElements.forEach((element) => ensureCustomFavicon(element));
+  removeInjectedFaviconLink();
+}
+
+function restoreFaviconCustomizations() {
+  originalFavicons.forEach((attributes, element) => {
+    if (!element) {
+      return;
+    }
+
+    if (attributes.href === null) {
+      element.removeAttribute("href");
+    } else {
+      element.setAttribute("href", attributes.href);
+    }
+
+    if (attributes.type === null || typeof attributes.type === "undefined") {
+      element.removeAttribute("type");
+    } else {
+      element.setAttribute("type", attributes.type);
+    }
+
+    element.removeAttribute(CUSTOM_FAVICON_ATTR);
+  });
+
+  originalFavicons.clear();
+  removeInjectedFaviconLink();
+
+  if (document.head) {
+    document
+      .querySelectorAll(`link[${CUSTOM_FAVICON_ATTR}]`)
+      .forEach((element) => {
+        element.removeAttribute(CUSTOM_FAVICON_ATTR);
+      });
+  }
+}
+
 function removeCustomLogo(originalElement) {
   const originalAttributes = customLogos.get(originalElement);
   if (!originalAttributes) {
@@ -753,11 +877,13 @@ function restoreGlobalAccountNameReplacements() {
 function applyLogoCustomizations() {
   const logoElements = document.querySelectorAll(LOGO_SELECTOR);
   logoElements.forEach((element) => ensureCustomLogo(element));
+  applyFaviconCustomizations();
 }
 
 function restoreLogoCustomizations() {
   const logoElements = document.querySelectorAll(LOGO_SELECTOR);
   logoElements.forEach((element) => removeCustomLogo(element));
+  restoreFaviconCustomizations();
 }
 
 function applyAccountNameCustomizations() {
