@@ -5,8 +5,16 @@ const ACCOUNT_NAME_SELECTORS = [
   "span.cds-p1-bold"
 ];
 const RETAILER_COLUMN_CELL_SELECTOR = "[class*='column-retailers']";
+const RETAILER_COLUMN_TEXT_DESCENDANT_SELECTORS = [
+  ".cds-display-block",
+  "app-show-more-popover"
+];
+const RETAILER_COLUMN_TEXT_DESCENDANT_SELECTOR =
+  RETAILER_COLUMN_TEXT_DESCENDANT_SELECTORS.join(", ");
 const RETAILER_COLUMN_TEXT_SELECTOR =
-  `${RETAILER_COLUMN_CELL_SELECTOR} .cds-display-block, ${RETAILER_COLUMN_CELL_SELECTOR} app-show-more-popover`;
+  RETAILER_COLUMN_TEXT_DESCENDANT_SELECTORS.map(
+    (selector) => `${RETAILER_COLUMN_CELL_SELECTOR} ${selector}`
+  ).join(", ");
 const EXCLUDED_TEXT_PARENT_NODES = new Set([
   "SCRIPT",
   "STYLE",
@@ -440,47 +448,65 @@ function replaceAccountNameInTextNodes() {
   });
 }
 
+function processRetailerCellElement(element) {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const textContent = element.textContent ?? "";
+  const trimmedText = textContent.trim();
+
+  if (!trimmedText || trimmedText === RETAILER_NAME) {
+    return false;
+  }
+
+  if (trimmedText === "-") {
+    return false;
+  }
+
+  const currentHTML = element.innerHTML;
+  const storedOriginal = retailerCellOriginalContent.get(element);
+
+  if (
+    !storedOriginal ||
+    typeof storedOriginal !== "object" ||
+    storedOriginal.html !== currentHTML ||
+    storedOriginal.originalText !== trimmedText
+  ) {
+    retailerCellOriginalContent.set(
+      element,
+      createRetailerCellSnapshot(element, trimmedText)
+    );
+  }
+
+  applyRetailerCellReplacement(element, trimmedText);
+  return true;
+}
+
 function applyRetailerCellCustomizations() {
   if (!document || typeof document.querySelectorAll !== "function") {
     return;
   }
 
-  const retailerElements = document.querySelectorAll(
-    RETAILER_COLUMN_TEXT_SELECTOR
-  );
+  const retailerCells = document.querySelectorAll(RETAILER_COLUMN_CELL_SELECTOR);
 
-  retailerElements.forEach((element) => {
-    if (!(element instanceof HTMLElement)) {
+  retailerCells.forEach((cell) => {
+    if (!(cell instanceof HTMLElement)) {
       return;
     }
 
-    const textContent = element.textContent ?? "";
-    const trimmedText = textContent.trim();
+    const descendantElements = cell.querySelectorAll(
+      RETAILER_COLUMN_TEXT_DESCENDANT_SELECTOR
+    );
 
-    if (!trimmedText || trimmedText === RETAILER_NAME) {
+    if (descendantElements.length > 0) {
+      descendantElements.forEach((element) => {
+        processRetailerCellElement(element);
+      });
       return;
     }
 
-    if (trimmedText === "-") {
-      return;
-    }
-
-    const currentHTML = element.innerHTML;
-    const storedOriginal = retailerCellOriginalContent.get(element);
-
-    if (
-      !storedOriginal ||
-      typeof storedOriginal !== "object" ||
-      storedOriginal.html !== currentHTML ||
-      storedOriginal.originalText !== trimmedText
-    ) {
-      retailerCellOriginalContent.set(
-        element,
-        createRetailerCellSnapshot(element, trimmedText)
-      );
-    }
-
-    applyRetailerCellReplacement(element, trimmedText);
+    processRetailerCellElement(cell);
   });
 
   retailerCellOriginalContent.forEach((_, element) => {
