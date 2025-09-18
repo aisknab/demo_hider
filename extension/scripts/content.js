@@ -115,15 +115,37 @@ function getRetailerTextVariants(value) {
   return Array.from(variants);
 }
 
-function applyRetailerCellReplacement(element, originalText) {
-  element.textContent = RETAILER_NAME;
-
-  const variants = getRetailerTextVariants(originalText);
-
-  if (variants.length === 0) {
-    return;
+function replaceRetailerTextNodes(element, variants) {
+  if (!element) {
+    return false;
   }
 
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let replaced = false;
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const originalValue = node.nodeValue ?? "";
+    let updatedValue = originalValue;
+
+    variants.forEach((variant) => {
+      if (!variant || !updatedValue.includes(variant)) {
+        return;
+      }
+
+      updatedValue = updatedValue.split(variant).join(RETAILER_NAME);
+    });
+
+    if (updatedValue !== originalValue) {
+      node.nodeValue = updatedValue;
+      replaced = true;
+    }
+  }
+
+  return replaced;
+}
+
+function updateRetailerCellAttributes(element, variants) {
   Array.from(element.attributes).forEach((attribute) => {
     let updatedValue = attribute.value ?? "";
 
@@ -139,7 +161,9 @@ function applyRetailerCellReplacement(element, originalText) {
       element.setAttribute(attribute.name, updatedValue);
     }
   });
+}
 
+function updateRetailerCellProperties(element, variants) {
   RETAILER_CELL_PROPERTY_NAMES.forEach((propertyName) => {
     let value = element[propertyName];
 
@@ -163,6 +187,31 @@ function applyRetailerCellReplacement(element, originalText) {
       }
     }
   });
+}
+
+function applyRetailerCellReplacement(element, originalText) {
+  const variants = getRetailerTextVariants(originalText);
+
+  let hasReplacedText = false;
+
+  if (variants.length > 0) {
+    hasReplacedText = replaceRetailerTextNodes(element, variants);
+  }
+
+  if (!hasReplacedText) {
+    const currentText = element.textContent ?? "";
+
+    if (currentText.trim() !== RETAILER_NAME) {
+      element.textContent = RETAILER_NAME;
+    }
+  }
+
+  if (variants.length === 0) {
+    return;
+  }
+
+  updateRetailerCellAttributes(element, variants);
+  updateRetailerCellProperties(element, variants);
 }
 
 function getAccountNameElements() {
