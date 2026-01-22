@@ -1252,6 +1252,78 @@ function collectBrandingFromActiveTab() {
     return rect.width * rect.height;
   }
 
+  function getElementRect(element) {
+    if (!element || typeof element.getBoundingClientRect !== "function") {
+      return null;
+    }
+
+    const rect = element.getBoundingClientRect();
+    if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height)) {
+      return null;
+    }
+
+    return rect;
+  }
+
+  function normalizePathname(pathname) {
+    if (!pathname) {
+      return "/";
+    }
+
+    const trimmed = pathname.trim();
+    if (!trimmed) {
+      return "/";
+    }
+
+    const normalized = trimmed.endsWith("/") && trimmed.length > 1
+      ? trimmed.slice(0, -1)
+      : trimmed;
+
+    return normalized || "/";
+  }
+
+  function isHomeLinkElement(element) {
+    if (!element || typeof element.closest !== "function") {
+      return false;
+    }
+
+    const anchor = element.closest("a");
+    if (!anchor) {
+      return false;
+    }
+
+    const label = (
+      anchor.getAttribute("aria-label") ||
+      anchor.getAttribute("title") ||
+      ""
+    ).toLowerCase();
+
+    if (label.includes("home")) {
+      return true;
+    }
+
+    const href = (anchor.getAttribute("href") || "").trim();
+    if (!href || href.startsWith("#")) {
+      return false;
+    }
+
+    const homePaths = new Set(["/", "/home", "/main"]);
+
+    try {
+      const resolved = new URL(href, location.href);
+      if (resolved.origin !== location.origin) {
+        return false;
+      }
+
+      return homePaths.has(normalizePathname(resolved.pathname));
+    } catch (error) {
+      if (href.startsWith("/")) {
+        return homePaths.has(normalizePathname(href));
+      }
+      return false;
+    }
+  }
+
   function splitCssLayers(value) {
     if (typeof value !== "string") {
       return [];
@@ -1632,13 +1704,23 @@ function collectBrandingFromActiveTab() {
     }
 
     const area = getElementArea(svgElement);
-    if (area && area < 900) {
+    if (!area || area < 900) {
       return -1;
     }
 
     let score = 0;
     if (area) {
       score += Math.min(area / 1000, 6);
+    }
+
+    const rect = getElementRect(svgElement);
+    if (rect && rect.height > 0) {
+      const ratio = rect.width / rect.height;
+      if (ratio >= 1.6) {
+        score += 1;
+      } else if (ratio <= 0.6) {
+        score -= 1;
+      }
     }
 
     const keywords = getElementKeywords(svgElement);
@@ -1649,7 +1731,8 @@ function collectBrandingFromActiveTab() {
     if (
       svgElement.closest(
         'a[class*="logo" i], a[aria-label*="logo" i], a[aria-label*="home" i]'
-      )
+      ) ||
+      isHomeLinkElement(svgElement)
     ) {
       score += 3;
     }
@@ -1681,6 +1764,9 @@ function collectBrandingFromActiveTab() {
       "header svg[aria-label*=\"logo\" i]",
       "header svg[class*=\"logo\" i]",
       "header svg[id*=\"logo\" i]",
+      "header svg",
+      "nav svg",
+      "[role=\"banner\"] svg",
       "svg[data-testid*=\"logo\" i]",
       "svg[aria-label*=\"logo\" i]",
       "svg[class*=\"logo\" i]",
