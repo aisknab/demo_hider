@@ -599,6 +599,328 @@ async function shouldInvertLogoDataUrl(dataUrl) {
   return whiteRatio >= LOGO_INVERT_RATIO;
 }
 
+function splitCssLayers(value) {
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  const layers = [];
+  let current = "";
+  let depth = 0;
+  let quote = null;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+
+    if (quote) {
+      if (char === quote && value[index - 1] !== "\\") {
+        quote = null;
+      }
+      current += char;
+      continue;
+    }
+
+    if (char === "\"" || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+
+    if (char === "(") {
+      depth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === ")") {
+      depth = Math.max(0, depth - 1);
+      current += char;
+      continue;
+    }
+
+    if (char === "," && depth === 0) {
+      if (current.trim()) {
+        layers.push(current.trim());
+      }
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.trim()) {
+    layers.push(current.trim());
+  }
+
+  return layers;
+}
+
+function isZeroPositionValue(value) {
+  if (!value) {
+    return true;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "0" || normalized === "0px" || normalized === "0%";
+}
+
+function getCssLayerValue(value, index) {
+  const layers = splitCssLayers(value);
+  if (layers.length === 0) {
+    return "";
+  }
+
+  if (Number.isInteger(index) && index >= 0 && index < layers.length) {
+    return layers[index];
+  }
+
+  return layers[0];
+}
+
+function parseCssSizeToken(token, elementSize) {
+  if (!token) {
+    return null;
+  }
+
+  const trimmed = token.trim().toLowerCase();
+  if (!trimmed || trimmed === "auto") {
+    return null;
+  }
+
+  if (trimmed.endsWith("%")) {
+    const percent = Number.parseFloat(trimmed.slice(0, -1));
+    if (!Number.isFinite(percent)) {
+      return null;
+    }
+    return (elementSize * percent) / 100;
+  }
+
+  const number = Number.parseFloat(trimmed);
+  if (!Number.isFinite(number)) {
+    return null;
+  }
+
+  return number;
+}
+
+function computeBackgroundDrawSize(
+  sizeValue,
+  elementWidth,
+  elementHeight,
+  imageWidth,
+  imageHeight
+) {
+  const normalized = (sizeValue || "").trim().toLowerCase();
+  if (!normalized || normalized === "auto") {
+    return { width: imageWidth, height: imageHeight };
+  }
+
+  if (normalized === "contain" || normalized === "cover") {
+    const scaleX = elementWidth / imageWidth;
+    const scaleY = elementHeight / imageHeight;
+    const scale =
+      normalized === "contain" ? Math.min(scaleX, scaleY) : Math.max(scaleX, scaleY);
+    return { width: imageWidth * scale, height: imageHeight * scale };
+  }
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  const widthToken = tokens[0] || "auto";
+  const heightToken = tokens[1] || "auto";
+
+  const width = parseCssSizeToken(widthToken, elementWidth);
+  const height = parseCssSizeToken(heightToken, elementHeight);
+
+  if (width !== null && height !== null) {
+    return { width, height };
+  }
+
+  if (width !== null) {
+    return { width, height: imageHeight * (width / imageWidth) };
+  }
+
+  if (height !== null) {
+    return { width: imageWidth * (height / imageHeight), height };
+  }
+
+  return { width: imageWidth, height: imageHeight };
+}
+
+function resolveBackgroundPositionValue(value, elementSize, drawSize) {
+  const trimmed = (value || "").trim().toLowerCase();
+  if (!trimmed) {
+    return 0;
+  }
+
+  if (trimmed === "left" || trimmed === "top") {
+    return 0;
+  }
+
+  if (trimmed === "center") {
+    return (elementSize - drawSize) / 2;
+  }
+
+  if (trimmed === "right" || trimmed === "bottom") {
+    return elementSize - drawSize;
+  }
+
+  if (trimmed.endsWith("%")) {
+    const percent = Number.parseFloat(trimmed.slice(0, -1));
+    if (!Number.isFinite(percent)) {
+      return 0;
+    }
+    return ((elementSize - drawSize) * percent) / 100;
+  }
+
+  const number = Number.parseFloat(trimmed);
+  if (!Number.isFinite(number)) {
+    return 0;
+  }
+
+  return number;
+}
+
+function parseBackgroundPositionLayer(value, elementWidth, elementHeight, drawWidth, drawHeight) {
+  const tokens = (value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const xToken = tokens[0] || "0%";
+  const yToken = tokens[1] || "50%";
+
+  return {
+    x: resolveBackgroundPositionValue(xToken, elementWidth, drawWidth),
+    y: resolveBackgroundPositionValue(yToken, elementHeight, drawHeight)
+  };
+}
+
+async function cropLogoSpriteDataUrl(dataUrl, logoMeta) {
+  if (
+    typeof dataUrl !== "string" ||
+    !dataUrl.startsWith("data:image/") ||
+    !logoMeta ||
+    logoMeta.type !== "css-background"
+  ) {
+    return null;
+  }
+
+  const elementWidth = Number(logoMeta.elementWidth);
+  const elementHeight = Number(logoMeta.elementHeight);
+
+  if (!Number.isFinite(elementWidth) || !Number.isFinite(elementHeight)) {
+    return null;
+  }
+
+  let image;
+
+  try {
+    image = await loadImageFromDataUrl(dataUrl);
+  } catch (error) {
+    return null;
+  }
+
+  const imageWidth = image.naturalWidth || image.width;
+  const imageHeight = image.naturalHeight || image.height;
+
+  if (!imageWidth || !imageHeight) {
+    return null;
+  }
+
+  const layerIndex = Number.isInteger(logoMeta.backgroundLayerIndex)
+    ? logoMeta.backgroundLayerIndex
+    : 0;
+
+  const sizeValue = getCssLayerValue(logoMeta.backgroundSize || "", layerIndex);
+  const drawSize = computeBackgroundDrawSize(
+    sizeValue,
+    elementWidth,
+    elementHeight,
+    imageWidth,
+    imageHeight
+  );
+
+  if (!drawSize.width || !drawSize.height) {
+    return null;
+  }
+
+  const positionXValue = getCssLayerValue(
+    logoMeta.backgroundPositionX || "",
+    layerIndex
+  );
+  const positionYValue = getCssLayerValue(
+    logoMeta.backgroundPositionY || "",
+    layerIndex
+  );
+
+  const positionLayer = getCssLayerValue(
+    logoMeta.backgroundPosition || "",
+    layerIndex
+  );
+  const positionFromLayer = parseBackgroundPositionLayer(
+    positionLayer,
+    elementWidth,
+    elementHeight,
+    drawSize.width,
+    drawSize.height
+  );
+
+  let posX = positionFromLayer.x;
+  let posY = positionFromLayer.y;
+
+  if (positionXValue || positionYValue) {
+    const resolvedX = resolveBackgroundPositionValue(
+      positionXValue,
+      elementWidth,
+      drawSize.width
+    );
+    const resolvedY = resolveBackgroundPositionValue(
+      positionYValue,
+      elementHeight,
+      drawSize.height
+    );
+
+    const useLayerPosition =
+      isZeroPositionValue(positionXValue) &&
+      isZeroPositionValue(positionYValue) &&
+      positionLayer &&
+      positionLayer !== "0% 0%";
+
+    if (!useLayerPosition) {
+      posX = resolvedX;
+      posY = resolvedY;
+    }
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(elementWidth));
+  canvas.height = Math.max(1, Math.round(elementHeight));
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return null;
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(
+    image,
+    0,
+    0,
+    imageWidth,
+    imageHeight,
+    posX,
+    posY,
+    drawSize.width,
+    drawSize.height
+  );
+
+  try {
+    return canvas.toDataURL("image/png");
+  } catch (error) {
+    return null;
+  }
+}
+
 function formatFeatureList(items) {
   if (!Array.isArray(items) || items.length === 0) {
     return "";
@@ -626,7 +948,7 @@ function describeImageFailure(label, error) {
   }
 }
 
-async function buildAutoFillUpdates({ extractedName, logoUrl, faviconUrl }) {
+async function buildAutoFillUpdates({ extractedName, logoUrl, faviconUrl, logoMeta }) {
   const updates = {};
   const found = [];
   const issues = [];
@@ -643,8 +965,17 @@ async function buildAutoFillUpdates({ extractedName, logoUrl, faviconUrl }) {
   }
 
   if (logoResult.dataUrl) {
-    updates.customLogoDataUrl = logoResult.dataUrl;
-    updates.customLogoInvert = await shouldInvertLogoDataUrl(logoResult.dataUrl);
+    let finalLogoDataUrl = logoResult.dataUrl;
+    const croppedDataUrl = await cropLogoSpriteDataUrl(
+      logoResult.dataUrl,
+      logoMeta
+    );
+    if (croppedDataUrl) {
+      finalLogoDataUrl = croppedDataUrl;
+    }
+
+    updates.customLogoDataUrl = finalLogoDataUrl;
+    updates.customLogoInvert = await shouldInvertLogoDataUrl(finalLogoDataUrl);
     found.push("logo");
   } else {
     issues.push(describeImageFailure("Logo", logoResult.error));
@@ -816,6 +1147,18 @@ function collectBrandingFromActiveTab() {
       .toLowerCase();
   }
 
+  function isFooterContext(element) {
+    if (!element || typeof element.closest !== "function") {
+      return false;
+    }
+
+    return Boolean(
+      element.closest(
+        "footer, [role=\"contentinfo\"], [class*=\"footer\" i], [id*=\"footer\" i]"
+      )
+    );
+  }
+
   function hasLogoAncestor(element) {
     if (!element || typeof element.closest !== "function") {
       return false;
@@ -858,6 +1201,48 @@ function collectBrandingFromActiveTab() {
     return false;
   }
 
+  function getElementTopRatio(element) {
+    if (!element || typeof element.getBoundingClientRect !== "function") {
+      return null;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const absoluteTop = rect.top + (window.scrollY || 0);
+    const docHeight = Math.max(
+      document.documentElement?.scrollHeight || 0,
+      document.body?.scrollHeight || 0,
+      window.innerHeight || 0
+    );
+
+    if (!docHeight) {
+      return null;
+    }
+
+    return absoluteTop / docHeight;
+  }
+
+  function getElementTopScore(element) {
+    const ratio = getElementTopRatio(element);
+
+    if (ratio === null) {
+      return 0;
+    }
+
+    if (ratio <= 0.2) {
+      return 3;
+    }
+
+    if (ratio <= 0.5) {
+      return 1;
+    }
+
+    if (ratio >= 0.8) {
+      return -3;
+    }
+
+    return 0;
+  }
+
   function getElementArea(element) {
     if (!element || typeof element.getBoundingClientRect !== "function") {
       return 0;
@@ -865,6 +1250,117 @@ function collectBrandingFromActiveTab() {
 
     const rect = element.getBoundingClientRect();
     return rect.width * rect.height;
+  }
+
+  function splitCssLayers(value) {
+    if (typeof value !== "string") {
+      return [];
+    }
+
+    const layers = [];
+    let current = "";
+    let depth = 0;
+    let quote = null;
+
+    for (let index = 0; index < value.length; index += 1) {
+      const char = value[index];
+
+      if (quote) {
+        if (char === quote && value[index - 1] !== "\\") {
+          quote = null;
+        }
+        current += char;
+        continue;
+      }
+
+      if (char === "\"" || char === "'") {
+        quote = char;
+        current += char;
+        continue;
+      }
+
+      if (char === "(") {
+        depth += 1;
+        current += char;
+        continue;
+      }
+
+      if (char === ")") {
+        depth = Math.max(0, depth - 1);
+        current += char;
+        continue;
+      }
+
+      if (char === "," && depth === 0) {
+        if (current.trim()) {
+          layers.push(current.trim());
+        }
+        current = "";
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (current.trim()) {
+      layers.push(current.trim());
+    }
+
+    return layers;
+  }
+
+  function extractBackgroundImageUrls(styleValue) {
+    if (!styleValue || styleValue === "none") {
+      return [];
+    }
+
+    const layers = splitCssLayers(styleValue);
+    const results = [];
+
+    layers.forEach((layer, index) => {
+      const match = /url\((['"]?)(.*?)\1\)/i.exec(layer);
+      const url = match && match[2] ? match[2].trim() : "";
+      if (url) {
+        results.push({ url, layerIndex: index });
+      }
+    });
+
+    return results;
+  }
+
+  function getCssImageUrlsForElement(element) {
+    if (!element || typeof window.getComputedStyle !== "function") {
+      return [];
+    }
+
+    const entries = [];
+    const pseudoSelectors = [null, "::before", "::after"];
+
+    pseudoSelectors.forEach((pseudo) => {
+      const style = pseudo ? window.getComputedStyle(element, pseudo) : window.getComputedStyle(element);
+      if (!style) {
+        return;
+      }
+
+      const backgroundEntries = extractBackgroundImageUrls(style.backgroundImage);
+      backgroundEntries.forEach((entry) => {
+        entries.push({
+          url: entry.url,
+          layerIndex: entry.layerIndex,
+          style
+        });
+      });
+    });
+
+    return entries;
+  }
+
+  function normalizeLogoText(value) {
+    if (typeof value !== "string") {
+      return "";
+    }
+
+    return value.replace(/\s+/g, " ").trim();
   }
 
   function svgToDataUrl(svgElement) {
@@ -884,13 +1380,69 @@ function collectBrandingFromActiveTab() {
     return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svgString)}`;
   }
 
+  function getImageLogoScore(imageElement, normalizedName) {
+    if (!imageElement || isSearchContext(imageElement)) {
+      return -1;
+    }
+
+    if (isFooterContext(imageElement)) {
+      return -1;
+    }
+
+    let score = 0;
+    const area = getElementArea(imageElement);
+
+    if (area) {
+      if (area >= 800) {
+        score += 1;
+      }
+
+      if (area < 200) {
+        score -= 1;
+      }
+    }
+
+    const keywords = getElementKeywords(imageElement);
+    if (keywords.includes("logo") || keywords.includes("brand")) {
+      score += 2;
+    }
+
+    if (hasLogoAncestor(imageElement)) {
+      score += 3;
+    }
+
+    if (imageElement.closest("header, nav, [role=\"banner\"]")) {
+      score += 2;
+    }
+
+    const altText = (imageElement.getAttribute("alt") || "").trim().toLowerCase();
+    if (normalizedName && altText) {
+      if (altText.includes(normalizedName) || normalizedName.includes(altText)) {
+        score += 3;
+      }
+
+      if (altText.includes("logo")) {
+        score += 1;
+      }
+    }
+
+    score += getElementTopScore(imageElement);
+
+    return score;
+  }
+
   function findImageLogo() {
     const selectors = [
       'header a[class*="logo" i] img',
       'header a[aria-label*="home" i] img',
       'header img[src*="logo" i]',
+      'header [class*="logo" i] img',
+      'header [id*="logo" i] img',
       'a[class*="logo" i] img',
       'a[aria-label*="home" i] img',
+      '[class*="logo" i] img',
+      '[id*="logo" i] img',
+      '[class*="brand" i] img',
       'img[src*="logo" i]',
       'img[data-src*="logo" i]',
       'img[alt*="logo" i]',
@@ -898,35 +1450,184 @@ function collectBrandingFromActiveTab() {
       'img[id*="logo" i]'
     ];
 
+    const candidates = new Set();
+
     for (const selector of selectors) {
       const elements = document.querySelectorAll(selector);
       for (const element of elements) {
-        if (isSearchContext(element)) {
-          continue;
-        }
-
-        const src =
-          element.getAttribute("src") || element.getAttribute("data-src");
-        if (src && src.trim()) {
-          return src.trim();
-        }
-
-        const srcset = element.getAttribute("srcset");
-        if (srcset) {
-          const firstCandidate = srcset.split(",")[0] || "";
-          const url = firstCandidate.trim().split(/\s+/)[0];
-          if (url) {
-            return url;
-          }
-        }
+        candidates.add(element);
       }
     }
 
-    return "";
+    let bestCandidate = null;
+    let bestScore = 0;
+    const normalizedName = extractedName ? extractedName.trim().toLowerCase() : "";
+
+    candidates.forEach((element) => {
+      const score = getImageLogoScore(element, normalizedName);
+      if (score <= -1) {
+        return;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = element;
+      }
+    });
+
+    if (!bestCandidate) {
+      return { url: "", score: Number.NEGATIVE_INFINITY };
+    }
+
+    const src =
+      bestCandidate.getAttribute("src") || bestCandidate.getAttribute("data-src");
+    if (src && src.trim()) {
+      return { url: src.trim(), score: bestScore };
+    }
+
+    const srcset = bestCandidate.getAttribute("srcset");
+    if (srcset) {
+      const firstCandidate = srcset.split(",")[0] || "";
+      const url = firstCandidate.trim().split(/\s+/)[0];
+      if (url) {
+        return { url, score: bestScore };
+      }
+    }
+
+    return { url: "", score: bestScore };
+  }
+
+  function getBackgroundLogoScore(element, normalizedName) {
+    if (!element || isSearchContext(element)) {
+      return -1;
+    }
+
+    if (isFooterContext(element)) {
+      return -1;
+    }
+
+    let score = 0;
+    const area = getElementArea(element);
+
+    if (area) {
+      if (area >= 800) {
+        score += 1;
+      }
+
+      if (area < 200) {
+        score -= 1;
+      }
+    }
+
+    const keywords = getElementKeywords(element);
+    if (keywords.includes("logo") || keywords.includes("brand")) {
+      score += 2;
+    }
+
+    if (hasLogoAncestor(element)) {
+      score += 2;
+    }
+
+    if (element.closest("header, nav, [role=\"banner\"]")) {
+      score += 2;
+    }
+
+    const elementText = normalizeLogoText(element.textContent || "");
+    if (normalizedName && elementText) {
+      const textLower = elementText.toLowerCase();
+      if (textLower.includes(normalizedName) || normalizedName.includes(textLower)) {
+        score += 3;
+      }
+    }
+
+    score += getElementTopScore(element);
+
+    return score;
+  }
+
+  function findBackgroundLogo(extractedName) {
+    const selectors = [
+      'header [class*="logo" i]',
+      'header [id*="logo" i]',
+      '[class*="logo" i]',
+      '[id*="logo" i]',
+      '[class*="brand" i]',
+      '[id*="brand" i]',
+      '[data-testid*="logo" i]',
+      '[aria-label*="logo" i]'
+    ];
+
+    const candidates = new Set();
+    selectors.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((element) => {
+        candidates.add(element);
+      });
+    });
+
+    let bestUrl = "";
+    let bestScore = Number.NEGATIVE_INFINITY;
+    let bestMeta = null;
+    const normalizedName = extractedName ? extractedName.trim().toLowerCase() : "";
+    const maxDescendantChecks = 60;
+
+    candidates.forEach((element) => {
+      const elementsToCheck = [element];
+      const descendants = Array.from(element.querySelectorAll("*"));
+      if (descendants.length > maxDescendantChecks) {
+        descendants.length = maxDescendantChecks;
+      }
+      elementsToCheck.push(...descendants);
+
+      elementsToCheck.forEach((node) => {
+        const cssEntries = getCssImageUrlsForElement(node);
+        if (cssEntries.length === 0) {
+          return;
+        }
+
+        const score = getBackgroundLogoScore(node, normalizedName);
+        if (score <= -1) {
+          return;
+        }
+
+        const rect = node.getBoundingClientRect();
+
+        cssEntries.forEach((entry) => {
+          const url = entry.url;
+          if (!url) {
+            return;
+          }
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestUrl = url;
+            bestMeta = {
+              type: "css-background",
+              backgroundLayerIndex: entry.layerIndex,
+              backgroundSize: entry.style ? entry.style.backgroundSize : "",
+              backgroundPosition: entry.style ? entry.style.backgroundPosition : "",
+              backgroundPositionX: entry.style ? entry.style.backgroundPositionX : "",
+              backgroundPositionY: entry.style ? entry.style.backgroundPositionY : "",
+              backgroundRepeat: entry.style ? entry.style.backgroundRepeat : "",
+              elementWidth: Math.round(rect.width || 0),
+              elementHeight: Math.round(rect.height || 0)
+            };
+          }
+        });
+      });
+    });
+
+    if (!bestUrl) {
+      return { url: "", score: Number.NEGATIVE_INFINITY, meta: null };
+    }
+
+    return { url: bestUrl, score: bestScore, meta: bestMeta };
   }
 
   function getSvgLogoScore(svgElement, normalizedName) {
     if (!svgElement || isSearchContext(svgElement)) {
+      return -1;
+    }
+
+    if (isFooterContext(svgElement)) {
       return -1;
     }
 
@@ -969,6 +1670,8 @@ function collectBrandingFromActiveTab() {
       score -= 0.5;
     }
 
+    score += getElementTopScore(svgElement);
+
     return score;
   }
 
@@ -1007,17 +1710,24 @@ function collectBrandingFromActiveTab() {
     }
 
     let bestCandidate = null;
-    let bestScore = 0;
+    let bestScore = Number.NEGATIVE_INFINITY;
 
     candidates.forEach((svgElement) => {
       const score = getSvgLogoScore(svgElement, normalizedName);
+      if (score <= -1) {
+        return;
+      }
       if (score > bestScore) {
         bestScore = score;
         bestCandidate = svgElement;
       }
     });
 
-    return bestCandidate ? svgToDataUrl(bestCandidate) : "";
+    if (!bestCandidate) {
+      return { url: "", score: Number.NEGATIVE_INFINITY };
+    }
+
+    return { url: svgToDataUrl(bestCandidate), score: bestScore };
   }
 
   const pageUrl = location.href || "";
@@ -1060,7 +1770,7 @@ function collectBrandingFromActiveTab() {
     'meta[itemprop="logo" i]'
   ]);
   const linkLogo = getFirstAttributeValue(['link[rel~="logo" i]'], "href");
-  const imageLogo = findImageLogo();
+  const imageLogoResult = findImageLogo();
   const appleLinks = collectLinkCandidates('link[rel~="apple-touch-icon" i]');
   const appleHref = selectIconHref(appleLinks, true);
   const ogImage = getMetaContent([
@@ -1074,23 +1784,42 @@ function collectBrandingFromActiveTab() {
     'link[rel~="icon" i], link[rel~="shortcut" i]'
   );
   const iconHref = selectIconHref(iconLinks, true);
-  const inlineSvgLogo = findInlineSvgLogo(extractedName);
+  const inlineSvgLogoResult = findInlineSvgLogo(extractedName);
+  const backgroundLogoResult = findBackgroundLogo(extractedName);
+
+  const scoredLogoResults = [
+    { ...imageLogoResult, priority: 3 },
+    { ...inlineSvgLogoResult, priority: 4 },
+    { ...backgroundLogoResult, priority: 2, meta: backgroundLogoResult.meta || null }
+  ].filter((result) => result.url);
+
+  scoredLogoResults.sort((a, b) => {
+    const scoreDelta = b.score - a.score;
+    if (scoreDelta !== 0) {
+      return scoreDelta;
+    }
+    return b.priority - a.priority;
+  });
 
   const logoCandidates = [
-    imageLogo,
-    inlineSvgLogo,
-    metaLogo,
-    linkLogo,
-    appleHref,
-    ogImage,
-    iconHref
+    ...scoredLogoResults.map((result) => ({
+      url: result.url,
+      meta: result.meta || null
+    })),
+    { url: metaLogo, meta: null },
+    { url: linkLogo, meta: null },
+    { url: appleHref, meta: null },
+    { url: ogImage, meta: null },
+    { url: iconHref, meta: null }
   ];
 
   let logoUrl = "";
+  let logoMeta = null;
   for (const candidate of logoCandidates) {
-    const resolved = resolveUrl(candidate, baseUrl);
+    const resolved = resolveUrl(candidate.url, baseUrl);
     if (resolved) {
       logoUrl = resolved;
+      logoMeta = candidate.meta;
       break;
     }
   }
@@ -1123,6 +1852,7 @@ function collectBrandingFromActiveTab() {
   return {
     extractedName,
     logoUrl,
+    logoMeta,
     faviconUrl,
     pageUrl
   };
@@ -1220,7 +1950,8 @@ async function autoFillFromActiveTab() {
           const { updates, found, issues } = await buildAutoFillUpdates({
             extractedName: payload.extractedName,
             logoUrl: payload.logoUrl,
-            faviconUrl: payload.faviconUrl
+            faviconUrl: payload.faviconUrl,
+            logoMeta: payload.logoMeta
           });
 
           if (Object.keys(updates).length > 0) {

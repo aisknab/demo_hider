@@ -51,6 +51,8 @@ let injectedFaviconLink = null;
 let originalAccountName = null;
 let originalAccountNamePriority = 0;
 let originalAccountNameSource = null;
+let originalDocumentTitle = null;
+let lastAppliedDocumentTitle = null;
 const replacedTextNodes = new Map();
 const retailerCellOriginalContent = new Map();
 const RETAILER_CELL_TEXT_PROPERTY_NAMES = [
@@ -860,6 +862,67 @@ function replaceAccountNameInTextNodes() {
   });
 }
 
+function splitTitleOnColon(title) {
+  if (typeof title !== "string") {
+    return null;
+  }
+
+  const index = title.indexOf(":");
+
+  if (index <= 0) {
+    return null;
+  }
+
+  return {
+    prefix: title.slice(0, index),
+    suffix: title.slice(index)
+  };
+}
+
+function applyDocumentTitleCustomization() {
+  if (!document || typeof document.title !== "string") {
+    return;
+  }
+
+  const currentTitle = document.title;
+
+  if (!currentTitle) {
+    return;
+  }
+
+  const isUsingReplacement =
+    typeof lastAppliedDocumentTitle === "string" &&
+    currentTitle === lastAppliedDocumentTitle;
+
+  if (originalDocumentTitle === null || !isUsingReplacement) {
+    originalDocumentTitle = currentTitle;
+  }
+
+  const split = splitTitleOnColon(originalDocumentTitle);
+
+  if (!split) {
+    lastAppliedDocumentTitle = currentTitle;
+    return;
+  }
+
+  const updatedTitle = `${getRetailerName()}${split.suffix}`;
+
+  if (updatedTitle !== currentTitle) {
+    document.title = updatedTitle;
+  }
+
+  lastAppliedDocumentTitle = document.title;
+}
+
+function restoreDocumentTitleCustomization() {
+  if (originalDocumentTitle !== null && typeof document?.title === "string") {
+    document.title = originalDocumentTitle;
+  }
+
+  originalDocumentTitle = null;
+  lastAppliedDocumentTitle = null;
+}
+
 function processRetailerCellElement(element) {
   if (!(element instanceof HTMLElement)) {
     return false;
@@ -996,6 +1059,7 @@ function applyAccountNameCustomizations() {
   accountNameElements.forEach((element) => applyCustomAccountName(element));
   applyRetailerCellCustomizations();
   replaceAccountNameInTextNodes();
+  applyDocumentTitleCustomization();
 }
 
 function restoreAccountNameCustomizations() {
@@ -1003,6 +1067,7 @@ function restoreAccountNameCustomizations() {
   accountNameElements.forEach((element) => restoreAccountName(element));
   restoreGlobalAccountNameReplacements();
   restoreRetailerCellCustomizations();
+  restoreDocumentTitleCustomization();
   originalAccountName = null;
   originalAccountNamePriority = 0;
   originalAccountNameSource = null;
