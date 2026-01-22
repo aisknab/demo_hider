@@ -120,6 +120,7 @@ function getIconImageData(enabled) {
 
 const STORAGE_DEFAULTS = {
   logoEnabled: false,
+  faviconEnabled: false,
   textEnabled: false,
   enabled: false
 };
@@ -136,10 +137,14 @@ function setIcon(enabled) {
 
 function resolveBrandingEnabled(value) {
   const hasLogo = typeof value.logoEnabled === "boolean";
+  const hasFavicon = typeof value.faviconEnabled === "boolean";
   const hasText = typeof value.textEnabled === "boolean";
 
-  if (hasLogo || hasText) {
-    return (hasLogo && Boolean(value.logoEnabled)) || (hasText && Boolean(value.textEnabled));
+  if (hasLogo || hasText || hasFavicon) {
+    const logoEnabled = hasLogo && Boolean(value.logoEnabled);
+    const textEnabled = hasText && Boolean(value.textEnabled);
+    const faviconEnabled = hasFavicon && Boolean(value.faviconEnabled) && logoEnabled;
+    return logoEnabled || textEnabled || faviconEnabled;
   }
 
   return Boolean(value.enabled);
@@ -155,6 +160,12 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.sync.get(null, (result) => {
     const hasLegacyEnabled = Object.prototype.hasOwnProperty.call(result, "enabled");
     const legacyValue = hasLegacyEnabled ? Boolean(result.enabled) : false;
+    const resolvedLogoEnabled =
+      typeof result.logoEnabled === "boolean"
+        ? result.logoEnabled
+        : hasLegacyEnabled
+          ? legacyValue
+          : false;
 
     const updates = {};
     let hasUpdates = false;
@@ -166,6 +177,11 @@ chrome.runtime.onInstalled.addListener(() => {
 
     if (typeof result.textEnabled !== "boolean") {
       updates.textEnabled = hasLegacyEnabled ? legacyValue : false;
+      hasUpdates = true;
+    }
+
+    if (typeof result.faviconEnabled !== "boolean") {
+      updates.faviconEnabled = resolvedLogoEnabled;
       hasUpdates = true;
     }
 
@@ -204,6 +220,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
   if (
     Object.prototype.hasOwnProperty.call(changes, "logoEnabled") ||
+    Object.prototype.hasOwnProperty.call(changes, "faviconEnabled") ||
     Object.prototype.hasOwnProperty.call(changes, "textEnabled") ||
     Object.prototype.hasOwnProperty.call(changes, "enabled")
   ) {

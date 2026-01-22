@@ -2,12 +2,12 @@
   "manifest_version": 3,
   "name": "Demo Header Logo Hider",
   "description": "Apply Demo Retailer branding to the header logo and account name on supported pages.",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "*://*/*"
   ],
   "action": {
     "default_popup": "extension/popup/popup.html"
@@ -18,7 +18,8 @@
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>"
+        "*://criteo.com/*",
+        "*://*.criteo.com/*"
       ],
       "js": [
         "extension/scripts/content.js"

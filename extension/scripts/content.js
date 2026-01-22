@@ -1,4 +1,5 @@
-const RETAILER_NAME = "Demo Retailer";
+const DEFAULT_RETAILER_NAME = "demo retailer";
+const DEFAULT_FAVICON_ENABLED = false;
 const LOGO_SELECTOR = "body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-header > div > mat-toolbar > div.toolbar-left > app-header-logo > img";
 const ACCOUNT_NAME_SELECTORS = [
   '[data-test="headerAccountListButtonText"]',
@@ -25,18 +26,20 @@ const EXCLUDED_TEXT_PARENT_NODES = new Set([
 
 const LOGO_WIDTH = 300;
 const LOGO_HEIGHT = 100;
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${LOGO_WIDTH}" height="${LOGO_HEIGHT}" viewBox="0 0 ${LOGO_WIDTH} ${LOGO_HEIGHT}"><rect width="100%" height="100%" fill="white"/><text x="50%" y="50%" fill="#FF6C00" font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="600" dominant-baseline="middle" text-anchor="middle">${RETAILER_NAME}</text></svg>`;
-const LOGO_DATA_URL = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(LOGO_SVG)}`;
-const FAVICON_SVG =
-  "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"64\" viewBox=\"0 0 64 64\"><rect width=\"64\" height=\"64\" rx=\"12\" ry=\"12\" fill=\"#FF6C00\"/><text x=\"50%\" y=\"50%\" fill=\"#FFFFFF\" font-family=\"Segoe UI, Arial, sans-serif\" font-size=\"36\" font-weight=\"600\" text-anchor=\"middle\" dominant-baseline=\"central\">D</text></svg>";
-const FAVICON_DATA_URL = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(FAVICON_SVG)}`;
+const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
+const CUSTOM_FAVICON_STORAGE_KEY = "customFaviconDataUrl";
+const RETAILER_NAME_STORAGE_KEY = "retailerName";
 const CUSTOM_LOGO_ATTR = "data-demo-hider-custom-logo";
 const CUSTOM_FAVICON_ATTR = "data-demo-hider-custom-favicon";
 const ORIGINAL_TEXT_ATTR = "data-demo-hider-original-text";
 
 const state = {
   logoEnabled: false,
-  textEnabled: false
+  textEnabled: false,
+  customLogoDataUrl: null,
+  customFaviconDataUrl: null,
+  faviconEnabled: DEFAULT_FAVICON_ENABLED,
+  retailerName: DEFAULT_RETAILER_NAME
 };
 let observer;
 let isInitialized = false;
@@ -87,6 +90,81 @@ const RETAILER_CELL_TEXT_ATTRIBUTE_TOKENS = new Set([
   "description",
   "popover"
 ]);
+
+function normalizeRetailerName(value) {
+  if (typeof value !== "string") {
+    return DEFAULT_RETAILER_NAME;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : DEFAULT_RETAILER_NAME;
+}
+
+function getRetailerName() {
+  return state.retailerName;
+}
+
+function escapeSvgText(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function buildLogoSvg(text) {
+  const escapedText = escapeSvgText(text);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${LOGO_WIDTH}" height="${LOGO_HEIGHT}" viewBox="0 0 ${LOGO_WIDTH} ${LOGO_HEIGHT}"><rect width="100%" height="100%" fill="white"/><text x="50%" y="50%" fill="#FF6C00" font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="600" dominant-baseline="middle" text-anchor="middle">${escapedText}</text></svg>`;
+}
+
+function getDefaultLogoDataUrl() {
+  const svg = buildLogoSvg(getRetailerName());
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function getRetailerMonogram() {
+  const name = getRetailerName();
+  const trimmed = name.trim();
+  const fallback = DEFAULT_RETAILER_NAME.trim();
+  const base = trimmed || fallback || "D";
+  return base.charAt(0).toUpperCase();
+}
+
+function buildFaviconSvg(letter) {
+  const escapedLetter = escapeSvgText(letter);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" ry="12" fill="#FF6C00"/><text x="50%" y="50%" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="600" text-anchor="middle" dominant-baseline="central">${escapedLetter}</text></svg>`;
+}
+
+function getFaviconDataUrl() {
+  const svg = buildFaviconSvg(getRetailerMonogram());
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function normalizeCustomLogoDataUrl(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || !trimmed.startsWith("data:image/")) {
+    return null;
+  }
+
+  return trimmed;
+}
+
+function normalizeCustomFaviconDataUrl(value) {
+  return normalizeCustomLogoDataUrl(value);
+}
+
+function getActiveLogoDataUrl() {
+  return state.customLogoDataUrl || getDefaultLogoDataUrl();
+}
+
+function getActiveFaviconDataUrl() {
+  return state.customFaviconDataUrl || getFaviconDataUrl();
+}
 
 function createRetailerCellSnapshot(element, originalText) {
   const attributes = {};
@@ -252,16 +330,16 @@ function collectRetailerCellTextInfo(element) {
 
   const hasAttributeText = attributeValues.some((value) => {
     const normalized = value.trim();
-    return normalized && normalized !== RETAILER_NAME;
+    return normalized && normalized !== getRetailerName();
   });
 
   const hasPropertyText = propertyValues.some((value) => {
     const normalized = value.trim();
-    return normalized && normalized !== RETAILER_NAME;
+    return normalized && normalized !== getRetailerName();
   });
 
   const hasTextContent =
-    trimmedText && trimmedText !== RETAILER_NAME ? true : false;
+    trimmedText && trimmedText !== getRetailerName() ? true : false;
 
   const hasOriginalText = hasTextContent || hasAttributeText || hasPropertyText;
 
@@ -293,7 +371,7 @@ function collectRetailerCellTextInfo(element) {
 function buildRetailerCellVariants(originalText, element, textInfo) {
   const variants = new Set();
 
-  if (originalAccountName && originalAccountName !== RETAILER_NAME) {
+  if (originalAccountName && originalAccountName !== getRetailerName()) {
     getRetailerTextVariants(originalAccountName).forEach((variant) => {
       variants.add(variant);
     });
@@ -344,7 +422,7 @@ function replaceRetailerTextNodes(element, variants) {
         return;
       }
 
-      updatedValue = updatedValue.split(variant).join(RETAILER_NAME);
+      updatedValue = updatedValue.split(variant).join(getRetailerName());
     });
 
     if (updatedValue !== originalValue) {
@@ -365,7 +443,7 @@ function updateRetailerCellAttributes(element, variants) {
         return;
       }
 
-      updatedValue = updatedValue.split(variant).join(RETAILER_NAME);
+      updatedValue = updatedValue.split(variant).join(getRetailerName());
     });
 
     if (updatedValue !== attribute.value) {
@@ -387,7 +465,7 @@ function updateRetailerCellProperties(element, variants) {
         return;
       }
 
-      value = value.split(variant).join(RETAILER_NAME);
+      value = value.split(variant).join(getRetailerName());
     });
 
     if (value !== element[propertyName]) {
@@ -412,12 +490,12 @@ function applyRetailerCellReplacement(element, originalText, textInfo) {
   if (!hasReplacedText) {
     const currentText = element.textContent ?? "";
 
-    if (originalText && originalText.trim() && currentText.trim() !== RETAILER_NAME) {
+    if (originalText && originalText.trim() && currentText.trim() !== getRetailerName()) {
       // No descendant text nodes matched any of the known variants, so replace
       // the entire cell contents as a fallback. This differs from the standard
       // replacement rule where only occurrences of the original retailer name
       // are updated.
-      element.textContent = RETAILER_NAME;
+      element.textContent = getRetailerName();
     }
   }
 
@@ -456,9 +534,9 @@ function ensureCustomLogo(originalElement) {
     customLogos.set(originalElement, originalAttributes);
   }
 
-  originalElement.setAttribute("src", LOGO_DATA_URL);
+  originalElement.setAttribute("src", getActiveLogoDataUrl());
   originalElement.removeAttribute("srcset");
-  originalElement.setAttribute("alt", RETAILER_NAME);
+  originalElement.setAttribute("alt", getRetailerName());
   originalElement.setAttribute(CUSTOM_LOGO_ATTR, "true");
 }
 
@@ -491,7 +569,7 @@ function ensureCustomFavicon(element) {
   }
 
   rememberOriginalFaviconAttributes(element);
-  element.setAttribute("href", FAVICON_DATA_URL);
+  element.setAttribute("href", getActiveFaviconDataUrl());
   element.setAttribute("type", "image/svg+xml");
   element.setAttribute(CUSTOM_FAVICON_ATTR, "true");
 }
@@ -501,19 +579,18 @@ function ensureInjectedFaviconLink() {
     return;
   }
 
-  if (injectedFaviconLink && injectedFaviconLink.isConnected) {
-    return;
-  }
-
   if (!injectedFaviconLink) {
     injectedFaviconLink = document.createElement("link");
     injectedFaviconLink.setAttribute("rel", "icon");
     injectedFaviconLink.setAttribute("type", "image/svg+xml");
-    injectedFaviconLink.setAttribute("href", FAVICON_DATA_URL);
     injectedFaviconLink.setAttribute(CUSTOM_FAVICON_ATTR, "true");
   }
 
-  document.head.appendChild(injectedFaviconLink);
+  injectedFaviconLink.setAttribute("href", getActiveFaviconDataUrl());
+
+  if (!injectedFaviconLink.isConnected) {
+    document.head.appendChild(injectedFaviconLink);
+  }
 }
 
 function removeInjectedFaviconLink() {
@@ -621,22 +698,22 @@ function applyCustomAccountName(element) {
 
   if (
     trimmedCurrent &&
-    trimmedCurrent !== RETAILER_NAME &&
+    trimmedCurrent !== getRetailerName() &&
     trimmedCurrent !== trimmedStored
   ) {
     element.setAttribute(ORIGINAL_TEXT_ATTR, currentText);
     setOriginalAccountName(currentText, element, priority);
-  } else if (trimmedStored && trimmedStored !== RETAILER_NAME) {
+  } else if (trimmedStored && trimmedStored !== getRetailerName()) {
     setOriginalAccountName(storedOriginal, element, priority);
   } else if (!element.hasAttribute(ORIGINAL_TEXT_ATTR)) {
     element.setAttribute(ORIGINAL_TEXT_ATTR, currentText);
   }
 
-  if (trimmedCurrent === RETAILER_NAME) {
+  if (trimmedCurrent === getRetailerName()) {
     return;
   }
 
-  element.textContent = RETAILER_NAME;
+  element.textContent = getRetailerName();
 }
 
 function restoreAccountName(element) {
@@ -664,7 +741,7 @@ function getAccountNamePriority(element) {
 function setOriginalAccountName(value, source, priority = 0) {
   const trimmed = (value ?? "").trim();
 
-  if (!trimmed || trimmed === RETAILER_NAME) {
+  if (!trimmed || trimmed === getRetailerName()) {
     return;
   }
 
@@ -702,7 +779,7 @@ function setOriginalAccountName(value, source, priority = 0) {
 }
 
 function replaceAccountNameInTextNodes() {
-  if (!originalAccountName || originalAccountName === RETAILER_NAME) {
+  if (!originalAccountName || originalAccountName === getRetailerName()) {
     return;
   }
 
@@ -749,7 +826,7 @@ function replaceAccountNameInTextNodes() {
       replacedTextNodes.set(node, value);
     }
 
-    node.nodeValue = value.split(originalAccountName).join(RETAILER_NAME);
+    node.nodeValue = value.split(originalAccountName).join(getRetailerName());
   });
 }
 
@@ -774,7 +851,7 @@ function processRetailerCellElement(element) {
   const storedOriginal = retailerCellOriginalContent.get(element);
 
   const elementContainsRetailerName =
-    typeof currentHTML === "string" && currentHTML.includes(RETAILER_NAME);
+    typeof currentHTML === "string" && currentHTML.includes(getRetailerName());
 
   let shouldUpdateSnapshot = false;
 
@@ -788,7 +865,7 @@ function processRetailerCellElement(element) {
 
     const isNewOriginalText =
       normalizedFallback &&
-      normalizedFallback !== RETAILER_NAME &&
+      normalizedFallback !== getRetailerName() &&
       normalizedFallback !== storedOriginalText;
 
     if (isNewOriginalText && !elementContainsRetailerName) {
@@ -877,13 +954,11 @@ function restoreGlobalAccountNameReplacements() {
 function applyLogoCustomizations() {
   const logoElements = document.querySelectorAll(LOGO_SELECTOR);
   logoElements.forEach((element) => ensureCustomLogo(element));
-  applyFaviconCustomizations();
 }
 
 function restoreLogoCustomizations() {
   const logoElements = document.querySelectorAll(LOGO_SELECTOR);
   logoElements.forEach((element) => removeCustomLogo(element));
-  restoreFaviconCustomizations();
 }
 
 function applyAccountNameCustomizations() {
@@ -910,6 +985,12 @@ function updateCustomizations() {
     restoreLogoCustomizations();
   }
 
+  if (state.logoEnabled && state.faviconEnabled) {
+    applyFaviconCustomizations();
+  } else {
+    restoreFaviconCustomizations();
+  }
+
   if (state.textEnabled) {
     applyAccountNameCustomizations();
   } else {
@@ -927,6 +1008,10 @@ function ensureObserver() {
       applyLogoCustomizations();
     }
 
+    if (state.logoEnabled && state.faviconEnabled) {
+      applyFaviconCustomizations();
+    }
+
     if (state.textEnabled) {
       applyAccountNameCustomizations();
     }
@@ -942,15 +1027,48 @@ function ensureObserver() {
 function applyState(newState, forceUpdate = false) {
   const normalizedState = {
     logoEnabled: Boolean(newState.logoEnabled),
-    textEnabled: Boolean(newState.textEnabled)
+    faviconEnabled: Boolean(newState.faviconEnabled),
+    textEnabled: Boolean(newState.textEnabled),
+    customLogoDataUrl: normalizeCustomLogoDataUrl(newState.customLogoDataUrl),
+    customFaviconDataUrl: normalizeCustomFaviconDataUrl(
+      newState.customFaviconDataUrl
+    ),
+    retailerName: normalizeRetailerName(newState.retailerName)
   };
 
+  const hasLogoDataUpdate =
+    normalizedState.customLogoDataUrl !== state.customLogoDataUrl;
+  const hasFaviconDataUpdate =
+    normalizedState.customFaviconDataUrl !== state.customFaviconDataUrl;
+  const hasRetailerNameUpdate =
+    normalizedState.retailerName !== state.retailerName;
+  const shouldRefreshLogo =
+    normalizedState.logoEnabled &&
+    (hasLogoDataUpdate || hasRetailerNameUpdate);
+  const shouldRefreshFavicon =
+    normalizedState.logoEnabled &&
+    normalizedState.faviconEnabled &&
+    (hasFaviconDataUpdate || hasRetailerNameUpdate);
+  const shouldRefreshText =
+    normalizedState.textEnabled && hasRetailerNameUpdate;
   const hasChanged =
     normalizedState.logoEnabled !== state.logoEnabled ||
-    normalizedState.textEnabled !== state.textEnabled;
+    normalizedState.faviconEnabled !== state.faviconEnabled ||
+    normalizedState.textEnabled !== state.textEnabled ||
+    shouldRefreshLogo ||
+    shouldRefreshFavicon ||
+    shouldRefreshText;
+
+  if (hasRetailerNameUpdate && state.textEnabled) {
+    restoreAccountNameCustomizations();
+  }
 
   state.logoEnabled = normalizedState.logoEnabled;
+  state.faviconEnabled = normalizedState.faviconEnabled;
   state.textEnabled = normalizedState.textEnabled;
+  state.customLogoDataUrl = normalizedState.customLogoDataUrl;
+  state.customFaviconDataUrl = normalizedState.customFaviconDataUrl;
+  state.retailerName = normalizedState.retailerName;
 
   if (hasChanged || forceUpdate) {
     updateCustomizations();
@@ -960,23 +1078,62 @@ function applyState(newState, forceUpdate = false) {
 function setFeatureState(partial) {
   const newState = {
     logoEnabled: state.logoEnabled,
-    textEnabled: state.textEnabled
+    faviconEnabled: state.faviconEnabled,
+    textEnabled: state.textEnabled,
+    customLogoDataUrl: state.customLogoDataUrl,
+    customFaviconDataUrl: state.customFaviconDataUrl,
+    retailerName: state.retailerName
   };
 
   const hasLogo = Object.prototype.hasOwnProperty.call(partial, "logoEnabled");
+  const hasFavicon = Object.prototype.hasOwnProperty.call(partial, "faviconEnabled");
   const hasText = Object.prototype.hasOwnProperty.call(partial, "textEnabled");
+  const hasCustomLogo = Object.prototype.hasOwnProperty.call(
+    partial,
+    CUSTOM_LOGO_STORAGE_KEY
+  );
+  const hasCustomFavicon = Object.prototype.hasOwnProperty.call(
+    partial,
+    CUSTOM_FAVICON_STORAGE_KEY
+  );
+  const hasRetailerName = Object.prototype.hasOwnProperty.call(
+    partial,
+    RETAILER_NAME_STORAGE_KEY
+  );
 
   if (hasLogo) {
     newState.logoEnabled = Boolean(partial.logoEnabled);
+  }
+
+  if (hasFavicon) {
+    newState.faviconEnabled = Boolean(partial.faviconEnabled);
   }
 
   if (hasText) {
     newState.textEnabled = Boolean(partial.textEnabled);
   }
 
-  if (!hasLogo && !hasText && Object.prototype.hasOwnProperty.call(partial, "enabled")) {
+  if (hasCustomLogo) {
+    newState.customLogoDataUrl = partial.customLogoDataUrl;
+  }
+
+  if (hasCustomFavicon) {
+    newState.customFaviconDataUrl = partial.customFaviconDataUrl;
+  }
+
+  if (hasRetailerName) {
+    newState.retailerName = partial.retailerName;
+  }
+
+  if (
+    !hasLogo &&
+    !hasFavicon &&
+    !hasText &&
+    Object.prototype.hasOwnProperty.call(partial, "enabled")
+  ) {
     const boolValue = Boolean(partial.enabled);
     newState.logoEnabled = boolValue;
+    newState.faviconEnabled = boolValue;
     newState.textEnabled = boolValue;
   }
 
@@ -987,9 +1144,24 @@ function setFeatureState(partial) {
 function initialize() {
   ensureObserver();
   chrome.storage.sync.get(
-    { logoEnabled: false, textEnabled: false, enabled: false },
+    {
+      logoEnabled: false,
+      faviconEnabled: DEFAULT_FAVICON_ENABLED,
+      textEnabled: false,
+      enabled: false,
+      retailerName: DEFAULT_RETAILER_NAME
+    },
     (result) => {
-      setFeatureState(result);
+      chrome.storage.local.get(
+        { customLogoDataUrl: null, customFaviconDataUrl: null },
+        (localResult) => {
+          setFeatureState({
+            ...result,
+            customLogoDataUrl: localResult.customLogoDataUrl,
+            customFaviconDataUrl: localResult.customFaviconDataUrl
+          });
+        }
+      );
     }
   );
 }
@@ -1004,34 +1176,56 @@ chrome.runtime.onMessage.addListener((message) => {
   if (
     message &&
     (Object.prototype.hasOwnProperty.call(message, "logoEnabled") ||
+      Object.prototype.hasOwnProperty.call(message, "faviconEnabled") ||
       Object.prototype.hasOwnProperty.call(message, "textEnabled") ||
-      Object.prototype.hasOwnProperty.call(message, "enabled"))
+      Object.prototype.hasOwnProperty.call(message, "enabled") ||
+      Object.prototype.hasOwnProperty.call(message, RETAILER_NAME_STORAGE_KEY))
   ) {
     setFeatureState(message);
   }
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "sync") {
-    return;
-  }
-
   const update = {};
   let hasUpdate = false;
 
-  if (Object.prototype.hasOwnProperty.call(changes, "logoEnabled")) {
-    update.logoEnabled = changes.logoEnabled.newValue;
-    hasUpdate = true;
+  if (area === "sync") {
+    if (Object.prototype.hasOwnProperty.call(changes, "logoEnabled")) {
+      update.logoEnabled = changes.logoEnabled.newValue;
+      hasUpdate = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "faviconEnabled")) {
+      update.faviconEnabled = changes.faviconEnabled.newValue;
+      hasUpdate = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "textEnabled")) {
+      update.textEnabled = changes.textEnabled.newValue;
+      hasUpdate = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, RETAILER_NAME_STORAGE_KEY)) {
+      update.retailerName = changes[RETAILER_NAME_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (!hasUpdate && Object.prototype.hasOwnProperty.call(changes, "enabled")) {
+      update.enabled = changes.enabled.newValue;
+      hasUpdate = true;
+    }
   }
 
-  if (Object.prototype.hasOwnProperty.call(changes, "textEnabled")) {
-    update.textEnabled = changes.textEnabled.newValue;
-    hasUpdate = true;
-  }
+  if (area === "local") {
+    if (Object.prototype.hasOwnProperty.call(changes, CUSTOM_LOGO_STORAGE_KEY)) {
+      update.customLogoDataUrl = changes[CUSTOM_LOGO_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
 
-  if (!hasUpdate && Object.prototype.hasOwnProperty.call(changes, "enabled")) {
-    update.enabled = changes.enabled.newValue;
-    hasUpdate = true;
+    if (Object.prototype.hasOwnProperty.call(changes, CUSTOM_FAVICON_STORAGE_KEY)) {
+      update.customFaviconDataUrl = changes[CUSTOM_FAVICON_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
   }
 
   if (hasUpdate) {

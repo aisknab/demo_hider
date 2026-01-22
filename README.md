@@ -19,6 +19,12 @@ content is restored when the toggle is turned off.
 
 * Open the extension popup and use the toggle to apply or restore the Demo
   Retailer branding.
+* Set a custom retailer name in the popup to control the replacement text and
+  the default logo text.
+* Upload a custom logo image in the popup to replace the logo (stored locally
+  on the current device).
+* Upload a custom favicon image in the popup to replace the page favicon, and
+  use the Replace favicon toggle to turn it on or off.
 * The setting is stored using `chrome.storage.sync`, so it persists across page
   refreshes and browser restarts.
 * While enabled, a MutationObserver reapplies the branding even if the page
