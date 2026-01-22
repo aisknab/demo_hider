@@ -27,6 +27,7 @@ const EXCLUDED_TEXT_PARENT_NODES = new Set([
 const LOGO_WIDTH = 300;
 const LOGO_HEIGHT = 100;
 const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
+const CUSTOM_LOGO_INVERT_STORAGE_KEY = "customLogoInvert";
 const CUSTOM_FAVICON_STORAGE_KEY = "customFaviconDataUrl";
 const RETAILER_NAME_STORAGE_KEY = "retailerName";
 const CUSTOM_LOGO_ATTR = "data-demo-hider-custom-logo";
@@ -37,6 +38,7 @@ const state = {
   logoEnabled: false,
   textEnabled: false,
   customLogoDataUrl: null,
+  customLogoInvert: false,
   customFaviconDataUrl: null,
   faviconEnabled: DEFAULT_FAVICON_ENABLED,
   retailerName: DEFAULT_RETAILER_NAME
@@ -156,6 +158,14 @@ function normalizeCustomLogoDataUrl(value) {
 
 function normalizeCustomFaviconDataUrl(value) {
   return normalizeCustomLogoDataUrl(value);
+}
+
+function normalizeCustomLogoInvert(value, dataUrl) {
+  if (!dataUrl) {
+    return false;
+  }
+
+  return Boolean(value);
 }
 
 function getActiveLogoDataUrl() {
@@ -528,15 +538,29 @@ function ensureCustomLogo(originalElement) {
     const originalAttributes = {
       src: originalElement.getAttribute("src"),
       srcset: originalElement.getAttribute("srcset"),
-      alt: originalElement.getAttribute("alt")
+      alt: originalElement.getAttribute("alt"),
+      filter: originalElement.style.filter
     };
 
     customLogos.set(originalElement, originalAttributes);
   }
 
+  const originalAttributes = customLogos.get(originalElement);
+  const originalFilter =
+    originalAttributes && typeof originalAttributes.filter === "string"
+      ? originalAttributes.filter
+      : "";
+
   originalElement.setAttribute("src", getActiveLogoDataUrl());
   originalElement.removeAttribute("srcset");
   originalElement.setAttribute("alt", getRetailerName());
+
+  if (state.customLogoInvert) {
+    originalElement.style.filter = "invert(1)";
+  } else {
+    originalElement.style.filter = originalFilter;
+  }
+
   originalElement.setAttribute(CUSTOM_LOGO_ATTR, "true");
 }
 
@@ -679,6 +703,12 @@ function removeCustomLogo(originalElement) {
     originalElement.setAttribute("alt", originalAttributes.alt);
   } else {
     originalElement.removeAttribute("alt");
+  }
+
+  if (typeof originalAttributes.filter === "string") {
+    originalElement.style.filter = originalAttributes.filter;
+  } else {
+    originalElement.style.removeProperty("filter");
   }
 
   originalElement.removeAttribute(CUSTOM_LOGO_ATTR);
@@ -1025,11 +1055,20 @@ function ensureObserver() {
 }
 
 function applyState(newState, forceUpdate = false) {
+  const normalizedCustomLogoDataUrl = normalizeCustomLogoDataUrl(
+    newState.customLogoDataUrl
+  );
+  const normalizedCustomLogoInvert = normalizeCustomLogoInvert(
+    newState.customLogoInvert,
+    normalizedCustomLogoDataUrl
+  );
+
   const normalizedState = {
     logoEnabled: Boolean(newState.logoEnabled),
     faviconEnabled: Boolean(newState.faviconEnabled),
     textEnabled: Boolean(newState.textEnabled),
-    customLogoDataUrl: normalizeCustomLogoDataUrl(newState.customLogoDataUrl),
+    customLogoDataUrl: normalizedCustomLogoDataUrl,
+    customLogoInvert: normalizedCustomLogoInvert,
     customFaviconDataUrl: normalizeCustomFaviconDataUrl(
       newState.customFaviconDataUrl
     ),
@@ -1038,13 +1077,15 @@ function applyState(newState, forceUpdate = false) {
 
   const hasLogoDataUpdate =
     normalizedState.customLogoDataUrl !== state.customLogoDataUrl;
+  const hasLogoInvertUpdate =
+    normalizedState.customLogoInvert !== state.customLogoInvert;
   const hasFaviconDataUpdate =
     normalizedState.customFaviconDataUrl !== state.customFaviconDataUrl;
   const hasRetailerNameUpdate =
     normalizedState.retailerName !== state.retailerName;
   const shouldRefreshLogo =
     normalizedState.logoEnabled &&
-    (hasLogoDataUpdate || hasRetailerNameUpdate);
+    (hasLogoDataUpdate || hasLogoInvertUpdate || hasRetailerNameUpdate);
   const shouldRefreshFavicon =
     normalizedState.logoEnabled &&
     normalizedState.faviconEnabled &&
@@ -1055,6 +1096,7 @@ function applyState(newState, forceUpdate = false) {
     normalizedState.logoEnabled !== state.logoEnabled ||
     normalizedState.faviconEnabled !== state.faviconEnabled ||
     normalizedState.textEnabled !== state.textEnabled ||
+    hasLogoInvertUpdate ||
     shouldRefreshLogo ||
     shouldRefreshFavicon ||
     shouldRefreshText;
@@ -1067,6 +1109,7 @@ function applyState(newState, forceUpdate = false) {
   state.faviconEnabled = normalizedState.faviconEnabled;
   state.textEnabled = normalizedState.textEnabled;
   state.customLogoDataUrl = normalizedState.customLogoDataUrl;
+  state.customLogoInvert = normalizedState.customLogoInvert;
   state.customFaviconDataUrl = normalizedState.customFaviconDataUrl;
   state.retailerName = normalizedState.retailerName;
 
@@ -1081,6 +1124,7 @@ function setFeatureState(partial) {
     faviconEnabled: state.faviconEnabled,
     textEnabled: state.textEnabled,
     customLogoDataUrl: state.customLogoDataUrl,
+    customLogoInvert: state.customLogoInvert,
     customFaviconDataUrl: state.customFaviconDataUrl,
     retailerName: state.retailerName
   };
@@ -1091,6 +1135,10 @@ function setFeatureState(partial) {
   const hasCustomLogo = Object.prototype.hasOwnProperty.call(
     partial,
     CUSTOM_LOGO_STORAGE_KEY
+  );
+  const hasCustomLogoInvert = Object.prototype.hasOwnProperty.call(
+    partial,
+    CUSTOM_LOGO_INVERT_STORAGE_KEY
   );
   const hasCustomFavicon = Object.prototype.hasOwnProperty.call(
     partial,
@@ -1115,6 +1163,10 @@ function setFeatureState(partial) {
 
   if (hasCustomLogo) {
     newState.customLogoDataUrl = partial.customLogoDataUrl;
+  }
+
+  if (hasCustomLogoInvert) {
+    newState.customLogoInvert = partial.customLogoInvert;
   }
 
   if (hasCustomFavicon) {
@@ -1153,11 +1205,16 @@ function initialize() {
     },
     (result) => {
       chrome.storage.local.get(
-        { customLogoDataUrl: null, customFaviconDataUrl: null },
+        {
+          customLogoDataUrl: null,
+          customLogoInvert: false,
+          customFaviconDataUrl: null
+        },
         (localResult) => {
           setFeatureState({
             ...result,
             customLogoDataUrl: localResult.customLogoDataUrl,
+            customLogoInvert: localResult.customLogoInvert,
             customFaviconDataUrl: localResult.customFaviconDataUrl
           });
         }
@@ -1219,6 +1276,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local") {
     if (Object.prototype.hasOwnProperty.call(changes, CUSTOM_LOGO_STORAGE_KEY)) {
       update.customLogoDataUrl = changes[CUSTOM_LOGO_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(changes, CUSTOM_LOGO_INVERT_STORAGE_KEY)
+    ) {
+      update.customLogoInvert = changes[CUSTOM_LOGO_INVERT_STORAGE_KEY].newValue;
       hasUpdate = true;
     }
 

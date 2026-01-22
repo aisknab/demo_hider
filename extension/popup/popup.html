@@ -25,27 +25,16 @@
           <span class="slider" aria-hidden="true"></span>
         </label>
       </section>
-      <section class="retailer-url" aria-label="Retailer URL">
-        <label class="retailer-url-label" for="retailer-url-input">Retailer URL</label>
-        <div class="retailer-url-controls">
-          <input
-            id="retailer-url-input"
-            class="retailer-url-input"
-            type="url"
-            placeholder="https://example.com"
-            autocomplete="off"
-          />
-          <button
-            id="retailer-url-auto"
-            class="retailer-url-auto"
-            type="button"
-          >
-            Auto fill
-          </button>
-        </div>
+      <section class="retailer-auto" aria-label="Auto grab branding">
+        <label class="retailer-auto-label" for="retailer-tab-auto">
+          Auto grab branding
+        </label>
+        <button id="retailer-tab-auto" class="retailer-tab-auto" type="button">
+          Auto grab from active tab
+        </button>
         <p
-          class="retailer-url-status"
-          id="retailer-url-status"
+          class="retailer-auto-status"
+          id="retailer-auto-status"
           role="status"
           aria-live="polite"
         ></p>

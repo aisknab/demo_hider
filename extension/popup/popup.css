@@ -31,7 +31,7 @@ main {
   gap: 12px;
 }
 
-.retailer-url {
+.retailer-auto {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -40,66 +40,44 @@ main {
 }
 
 @media (prefers-color-scheme: light) {
-  .retailer-url {
+  .retailer-auto {
     border-top-color: rgba(0, 0, 0, 0.12);
   }
 }
 
-.retailer-url-label {
+.retailer-auto-label {
   font-size: 13px;
   font-weight: 600;
 }
 
-.retailer-url-controls {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.retailer-url-input {
-  flex: 1;
-  font-size: 12px;
+.retailer-tab-auto {
+  width: 100%;
+  border: 1px solid #666;
+  border-radius: 6px;
   padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid #666;
-  background: transparent;
-  color: inherit;
-}
-
-@media (prefers-color-scheme: light) {
-  .retailer-url-input {
-    border-color: #c0c0c0;
-  }
-}
-
-.retailer-url-auto {
-  border: 1px solid #666;
-  border-radius: 6px;
-  padding: 4px 8px;
   background: transparent;
   color: inherit;
   font-size: 12px;
   cursor: pointer;
-  white-space: nowrap;
 }
 
 @media (prefers-color-scheme: light) {
-  .retailer-url-auto {
+  .retailer-tab-auto {
     border-color: #c0c0c0;
   }
 }
 
-.retailer-url-auto:disabled {
+.retailer-tab-auto:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.retailer-url-status {
+.retailer-auto-status {
   margin: 0;
   font-size: 12px;
 }
 
-.retailer-url-status[data-error="true"] {
+.retailer-auto-status[data-error="true"] {
   color: #ff6b6b;
 }
 

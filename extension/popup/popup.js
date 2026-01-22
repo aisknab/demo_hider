@@ -2,9 +2,8 @@ const logoToggle = document.getElementById("logo-toggle");
 const faviconToggle = document.getElementById("favicon-toggle");
 const textToggle = document.getElementById("text-toggle");
 const statusElement = document.getElementById("status");
-const retailerUrlInput = document.getElementById("retailer-url-input");
-const retailerUrlAutoButton = document.getElementById("retailer-url-auto");
-const retailerUrlStatus = document.getElementById("retailer-url-status");
+const retailerTabAutoButton = document.getElementById("retailer-tab-auto");
+const retailerAutoStatus = document.getElementById("retailer-auto-status");
 const retailerNameInput = document.getElementById("retailer-name-input");
 const customLogoInput = document.getElementById("custom-logo-input");
 const customLogoClearButton = document.getElementById("custom-logo-clear");
@@ -18,23 +17,29 @@ const customFaviconPreviewImage = document.getElementById("custom-favicon-previe
 const customFaviconStatus = document.getElementById("custom-favicon-status");
 
 const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
+const CUSTOM_LOGO_INVERT_STORAGE_KEY = "customLogoInvert";
 const CUSTOM_FAVICON_STORAGE_KEY = "customFaviconDataUrl";
 const RETAILER_NAME_STORAGE_KEY = "retailerName";
-const RETAILER_URL_STORAGE_KEY = "retailerUrl";
 const DEFAULT_RETAILER_NAME = "demo retailer";
-const DEFAULT_RETAILER_URL = "";
 const DEFAULT_FAVICON_ENABLED = false;
 const MAX_CUSTOM_LOGO_BYTES = 1024 * 1024 * 2;
 const MAX_CUSTOM_FAVICON_BYTES = 1024 * 512;
+const LOGO_INVERT_SAMPLE_SIZE = 64;
+const LOGO_INVERT_WHITE_THRESHOLD = 235;
+const LOGO_INVERT_DARK_THRESHOLD = 120;
+const LOGO_INVERT_ALPHA_THRESHOLD = 16;
+const LOGO_INVERT_RATIO = 0.9;
+const LOGO_INVERT_MAX_DARK_RATIO = 0.02;
+const LOGO_INVERT_MIN_OPAQUE_PIXELS = 20;
 
 const state = {
   logoEnabled: false,
   faviconEnabled: DEFAULT_FAVICON_ENABLED,
   textEnabled: false,
   customLogoDataUrl: null,
+  customLogoInvert: false,
   customFaviconDataUrl: null,
-  retailerName: DEFAULT_RETAILER_NAME,
-  retailerUrl: DEFAULT_RETAILER_URL
+  retailerName: DEFAULT_RETAILER_NAME
 };
 
 function getStatusMessage(currentState) {
@@ -75,14 +80,6 @@ function normalizeRetailerName(value) {
   return trimmed ? trimmed : DEFAULT_RETAILER_NAME;
 }
 
-function normalizeRetailerUrl(value) {
-  if (typeof value !== "string") {
-    return DEFAULT_RETAILER_URL;
-  }
-
-  return value.trim();
-}
-
 function normalizeCustomLogoDataUrl(value) {
   if (typeof value !== "string") {
     return null;
@@ -98,6 +95,14 @@ function normalizeCustomLogoDataUrl(value) {
 
 function normalizeCustomFaviconDataUrl(value) {
   return normalizeCustomLogoDataUrl(value);
+}
+
+function normalizeCustomLogoInvert(value, dataUrl) {
+  if (!dataUrl) {
+    return false;
+  }
+
+  return Boolean(value);
 }
 
 function setCustomLogoStatus(message, isError = false) {
@@ -141,14 +146,18 @@ function setCustomFaviconStatus(message, isError = false) {
   }
 }
 
-function setRetailerUrlStatus(message, isError = false) {
-  retailerUrlStatus.textContent = message;
+function setAutoGrabStatus(message, isError = false) {
+  retailerAutoStatus.textContent = message;
 
   if (isError) {
-    retailerUrlStatus.setAttribute("data-error", "true");
+    retailerAutoStatus.setAttribute("data-error", "true");
   } else {
-    retailerUrlStatus.removeAttribute("data-error");
+    retailerAutoStatus.removeAttribute("data-error");
   }
+}
+
+function setAutoFillButtonsDisabled(disabled) {
+  retailerTabAutoButton.disabled = disabled;
 }
 
 function updateCustomFaviconUi() {
@@ -178,12 +187,18 @@ function applyState(newState) {
   state.logoEnabled = Boolean(newState.logoEnabled);
   state.faviconEnabled = Boolean(newState.faviconEnabled);
   state.textEnabled = Boolean(newState.textEnabled);
-  state.customLogoDataUrl = normalizeCustomLogoDataUrl(newState.customLogoDataUrl);
+  const normalizedCustomLogoDataUrl = normalizeCustomLogoDataUrl(
+    newState.customLogoDataUrl
+  );
+  state.customLogoDataUrl = normalizedCustomLogoDataUrl;
+  state.customLogoInvert = normalizeCustomLogoInvert(
+    newState.customLogoInvert,
+    normalizedCustomLogoDataUrl
+  );
   state.customFaviconDataUrl = normalizeCustomFaviconDataUrl(
     newState.customFaviconDataUrl
   );
   state.retailerName = normalizeRetailerName(newState.retailerName);
-  state.retailerUrl = normalizeRetailerUrl(newState.retailerUrl);
 
   logoToggle.checked = state.logoEnabled;
   faviconToggle.checked = state.faviconEnabled;
@@ -191,10 +206,6 @@ function applyState(newState) {
 
   if (document.activeElement !== retailerNameInput) {
     retailerNameInput.value = state.retailerName;
-  }
-
-  if (document.activeElement !== retailerUrlInput) {
-    retailerUrlInput.value = state.retailerUrl;
   }
 
   statusElement.textContent = getStatusMessage(state);
@@ -208,9 +219,9 @@ function buildUpdatedState(partial) {
     faviconEnabled: state.faviconEnabled,
     textEnabled: state.textEnabled,
     customLogoDataUrl: state.customLogoDataUrl,
+    customLogoInvert: state.customLogoInvert,
     customFaviconDataUrl: state.customFaviconDataUrl,
-    retailerName: state.retailerName,
-    retailerUrl: state.retailerUrl
+    retailerName: state.retailerName
   };
 
   const hasLogo = Object.prototype.hasOwnProperty.call(partial, "logoEnabled");
@@ -220,6 +231,10 @@ function buildUpdatedState(partial) {
     partial,
     CUSTOM_LOGO_STORAGE_KEY
   );
+  const hasCustomLogoInvert = Object.prototype.hasOwnProperty.call(
+    partial,
+    CUSTOM_LOGO_INVERT_STORAGE_KEY
+  );
   const hasCustomFavicon = Object.prototype.hasOwnProperty.call(
     partial,
     CUSTOM_FAVICON_STORAGE_KEY
@@ -227,10 +242,6 @@ function buildUpdatedState(partial) {
   const hasRetailerName = Object.prototype.hasOwnProperty.call(
     partial,
     RETAILER_NAME_STORAGE_KEY
-  );
-  const hasRetailerUrl = Object.prototype.hasOwnProperty.call(
-    partial,
-    RETAILER_URL_STORAGE_KEY
   );
 
   if (hasLogo) {
@@ -249,16 +260,16 @@ function buildUpdatedState(partial) {
     newState.customLogoDataUrl = partial.customLogoDataUrl;
   }
 
+  if (hasCustomLogoInvert) {
+    newState.customLogoInvert = partial.customLogoInvert;
+  }
+
   if (hasCustomFavicon) {
     newState.customFaviconDataUrl = partial.customFaviconDataUrl;
   }
 
   if (hasRetailerName) {
     newState.retailerName = partial.retailerName;
-  }
-
-  if (hasRetailerUrl) {
-    newState.retailerUrl = partial.retailerUrl;
   }
 
   if (
@@ -288,16 +299,20 @@ function syncStateWithStorage() {
       faviconEnabled: DEFAULT_FAVICON_ENABLED,
       textEnabled: false,
       enabled: false,
-      retailerName: DEFAULT_RETAILER_NAME,
-      retailerUrl: DEFAULT_RETAILER_URL
+      retailerName: DEFAULT_RETAILER_NAME
     },
     (result) => {
       chrome.storage.local.get(
-        { customLogoDataUrl: null, customFaviconDataUrl: null },
+        {
+          customLogoDataUrl: null,
+          customLogoInvert: false,
+          customFaviconDataUrl: null
+        },
         (localResult) => {
           updateState({
             ...result,
             customLogoDataUrl: localResult.customLogoDataUrl,
+            customLogoInvert: localResult.customLogoInvert,
             customFaviconDataUrl: localResult.customFaviconDataUrl
           });
         }
@@ -322,10 +337,11 @@ function persistState(newState) {
   );
 }
 
-function persistCustomLogo(dataUrl) {
+function persistCustomLogo(dataUrl, invert = false) {
   chrome.storage.local.set(
     {
-      customLogoDataUrl: dataUrl
+      customLogoDataUrl: dataUrl,
+      customLogoInvert: Boolean(invert)
     },
     () => {
       if (chrome.runtime.lastError) {
@@ -372,319 +388,8 @@ function persistRetailerName(name) {
   );
 }
 
-function persistRetailerUrl(url) {
-  chrome.storage.sync.set(
-    {
-      retailerUrl: url
-    },
-    () => {
-      if (chrome.runtime.lastError) {
-        console.error("Unable to persist retailer URL", chrome.runtime.lastError);
-        syncStateWithStorage();
-      }
-    }
-  );
-}
-
 let autoFillInProgress = false;
 let autoFillSequence = 0;
-
-function parseRetailerUrl(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return null;
-  }
-
-  let candidate = trimmed;
-
-  if (candidate.startsWith("//")) {
-    candidate = `https:${candidate}`;
-  }
-
-  const hasScheme = /^https?:\/\//i.test(candidate);
-
-  if (!hasScheme) {
-    candidate = `https://${candidate}`;
-  }
-
-  try {
-    const parsed = new URL(candidate);
-    if (!parsed.hostname || !["http:", "https:"].includes(parsed.protocol)) {
-      return null;
-    }
-    return parsed;
-  } catch (error) {
-    return null;
-  }
-}
-
-function getMetaContent(document, selectors) {
-  if (!document) {
-    return "";
-  }
-
-  for (const selector of selectors) {
-    const element = document.querySelector(selector);
-    if (!element) {
-      continue;
-    }
-
-    const content = element.getAttribute("content");
-    if (content && content.trim()) {
-      return content.trim();
-    }
-  }
-
-  return "";
-}
-
-function getFirstAttributeValue(document, selectors, attributeName) {
-  if (!document) {
-    return "";
-  }
-
-  for (const selector of selectors) {
-    const element = document.querySelector(selector);
-    if (!element) {
-      continue;
-    }
-
-    const value = element.getAttribute(attributeName);
-    if (value && value.trim()) {
-      return value.trim();
-    }
-  }
-
-  return "";
-}
-
-function collectLinkCandidates(document, selector) {
-  if (!document) {
-    return [];
-  }
-
-  return Array.from(document.querySelectorAll(selector))
-    .map((element) => ({
-      href: element.getAttribute("href"),
-      sizes: element.getAttribute("sizes")
-    }))
-    .filter((entry) => entry.href && entry.href.trim());
-}
-
-function parseIconSizes(value) {
-  if (!value || value.trim().toLowerCase() === "any") {
-    return [];
-  }
-
-  return value
-    .split(/\s+/)
-    .map((token) => {
-      const match = token.match(/(\d+)\s*[xX]\s*(\d+)/);
-      if (!match) {
-        return null;
-      }
-
-      const width = Number.parseInt(match[1], 10);
-      const height = Number.parseInt(match[2], 10);
-
-      if (!Number.isFinite(width) || !Number.isFinite(height)) {
-        return null;
-      }
-
-      return Math.max(width, height);
-    })
-    .filter((size) => Number.isFinite(size));
-}
-
-function selectIconHref(links, preferLargest) {
-  if (!Array.isArray(links) || links.length === 0) {
-    return "";
-  }
-
-  let selected = null;
-  let selectedSize = preferLargest ? -1 : Number.POSITIVE_INFINITY;
-
-  links.forEach((link) => {
-    const sizes = parseIconSizes(link.sizes);
-    const size = sizes.length
-      ? preferLargest
-        ? Math.max(...sizes)
-        : Math.min(...sizes)
-      : null;
-
-    if (size === null) {
-      if (!selected) {
-        selected = link;
-      }
-      return;
-    }
-
-    const shouldReplace = preferLargest ? size > selectedSize : size < selectedSize;
-    if (shouldReplace) {
-      selected = link;
-      selectedSize = size;
-    }
-  });
-
-  return selected ? selected.href : links[0].href;
-}
-
-function getBaseUrl(document, fallbackUrl) {
-  const baseHref = getFirstAttributeValue(document, ["base[href]"], "href");
-
-  if (baseHref) {
-    try {
-      return new URL(baseHref, fallbackUrl).toString();
-    } catch (error) {
-      return fallbackUrl;
-    }
-  }
-
-  return fallbackUrl;
-}
-
-function resolveUrl(value, baseUrl) {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  if (trimmed.startsWith("data:image/")) {
-    return trimmed;
-  }
-
-  try {
-    return new URL(trimmed, baseUrl).toString();
-  } catch (error) {
-    return null;
-  }
-}
-
-function extractRetailerName(document, parsedUrl) {
-  const candidates = [
-    getMetaContent(document, [
-      'meta[property="og:site_name" i]',
-      'meta[name="application-name" i]',
-      'meta[name="apple-mobile-web-app-title" i]'
-    ]),
-    getMetaContent(document, [
-      'meta[property="og:title" i]',
-      'meta[name="twitter:title" i]'
-    ]),
-    typeof document?.title === "string" ? document.title : ""
-  ];
-
-  for (const candidate of candidates) {
-    const trimmed = candidate.trim();
-    if (trimmed) {
-      return trimmed;
-    }
-  }
-
-  if (parsedUrl && parsedUrl.hostname) {
-    return parsedUrl.hostname.replace(/^www\./i, "");
-  }
-
-  return "";
-}
-
-function extractLogoUrl(document, baseUrl) {
-  const metaLogo = getMetaContent(document, [
-    'meta[property="og:logo" i]',
-    'meta[name="logo" i]',
-    'meta[itemprop="logo" i]'
-  ]);
-  const linkLogo = getFirstAttributeValue(
-    document,
-    ['link[rel~="logo" i]'],
-    "href"
-  );
-  const imageLogo = getFirstAttributeValue(
-    document,
-    [
-      'img[alt*="logo" i]',
-      'img[class*="logo" i]',
-      'img[id*="logo" i]'
-    ],
-    "src"
-  );
-  const appleLinks = collectLinkCandidates(
-    document,
-    'link[rel~="apple-touch-icon" i]'
-  );
-  const appleHref = selectIconHref(appleLinks, true);
-  const ogImage = getMetaContent(document, [
-    'meta[property="og:image" i]',
-    'meta[property="og:image:url" i]',
-    'meta[property="og:image:secure_url" i]',
-    'meta[name="twitter:image" i]',
-    'meta[name="twitter:image:src" i]'
-  ]);
-  const iconLinks = collectLinkCandidates(
-    document,
-    'link[rel~="icon" i], link[rel~="shortcut" i]'
-  );
-  const iconHref = selectIconHref(iconLinks, true);
-
-  const candidates = [
-    metaLogo,
-    linkLogo,
-    imageLogo,
-    appleHref,
-    ogImage,
-    iconHref
-  ];
-
-  for (const candidate of candidates) {
-    const resolved = resolveUrl(candidate, baseUrl);
-    if (resolved) {
-      return resolved;
-    }
-  }
-
-  return null;
-}
-
-function extractFaviconUrl(document, baseUrl, parsedUrl) {
-  const iconLinks = collectLinkCandidates(
-    document,
-    'link[rel~="icon" i], link[rel~="shortcut" i], link[rel~="mask-icon" i]'
-  );
-  const iconHref = selectIconHref(iconLinks, false);
-  if (iconHref) {
-    const resolved = resolveUrl(iconHref, baseUrl);
-    if (resolved) {
-      return resolved;
-    }
-  }
-
-  const appleLinks = collectLinkCandidates(
-    document,
-    'link[rel~="apple-touch-icon" i]'
-  );
-  const appleHref = selectIconHref(appleLinks, false);
-  if (appleHref) {
-    const resolved = resolveUrl(appleHref, baseUrl);
-    if (resolved) {
-      return resolved;
-    }
-  }
-
-  if (parsedUrl && parsedUrl.origin) {
-    return new URL("/favicon.ico", parsedUrl.origin).toString();
-  }
-
-  return null;
-}
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -787,20 +492,111 @@ async function fetchImageAsDataUrl(url, maxBytes) {
   }
 }
 
-async function fetchRetailerDocument(url) {
-  const response = await fetch(url, { redirect: "follow" });
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
 
-  if (!response.ok) {
-    throw new Error(`Unable to fetch retailer URL (status ${response.status})`);
+    image.addEventListener("load", () => resolve(image), { once: true });
+    image.addEventListener(
+      "error",
+      () => reject(new Error("Unable to load image data.")),
+      { once: true }
+    );
+
+    image.decoding = "async";
+    image.src = dataUrl;
+  });
+}
+
+async function shouldInvertLogoDataUrl(dataUrl) {
+  if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
+    return false;
   }
 
-  const html = await response.text();
-  const parser = new DOMParser();
-  const document = parser.parseFromString(html, "text/html");
-  const finalUrl = response.url || url;
-  const baseUrl = getBaseUrl(document, finalUrl);
+  let image;
 
-  return { document, baseUrl, finalUrl };
+  try {
+    image = await loadImageFromDataUrl(dataUrl);
+  } catch (error) {
+    return false;
+  }
+
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+
+  if (!width || !height) {
+    return false;
+  }
+
+  const scale = Math.min(
+    LOGO_INVERT_SAMPLE_SIZE / width,
+    LOGO_INVERT_SAMPLE_SIZE / height,
+    1
+  );
+  const sampleWidth = Math.max(1, Math.round(width * scale));
+  const sampleHeight = Math.max(1, Math.round(height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = sampleWidth;
+  canvas.height = sampleHeight;
+
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return false;
+  }
+
+  context.clearRect(0, 0, sampleWidth, sampleHeight);
+  context.drawImage(image, 0, 0, sampleWidth, sampleHeight);
+
+  let opaquePixels = 0;
+  let whitePixels = 0;
+  let darkPixels = 0;
+
+  try {
+    const data = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+
+    for (let index = 0; index < data.length; index += 4) {
+      const alpha = data[index + 3];
+
+      if (alpha < LOGO_INVERT_ALPHA_THRESHOLD) {
+        continue;
+      }
+
+      opaquePixels += 1;
+
+      const red = data[index];
+      const green = data[index + 1];
+      const blue = data[index + 2];
+
+      if (
+        red >= LOGO_INVERT_WHITE_THRESHOLD &&
+        green >= LOGO_INVERT_WHITE_THRESHOLD &&
+        blue >= LOGO_INVERT_WHITE_THRESHOLD
+      ) {
+        whitePixels += 1;
+      } else {
+        const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+        if (luminance <= LOGO_INVERT_DARK_THRESHOLD) {
+          darkPixels += 1;
+        }
+      }
+    }
+  } catch (error) {
+    return false;
+  }
+
+  if (opaquePixels < LOGO_INVERT_MIN_OPAQUE_PIXELS) {
+    return false;
+  }
+
+  const darkRatio = darkPixels / opaquePixels;
+  const whiteRatio = whitePixels / opaquePixels;
+
+  if (darkRatio > LOGO_INVERT_MAX_DARK_RATIO) {
+    return false;
+  }
+
+  return whiteRatio >= LOGO_INVERT_RATIO;
 }
 
 function formatFeatureList(items) {
@@ -830,133 +626,643 @@ function describeImageFailure(label, error) {
   }
 }
 
-async function autoFillFromRetailerUrl() {
+async function buildAutoFillUpdates({ extractedName, logoUrl, faviconUrl }) {
+  const updates = {};
+  const found = [];
+  const issues = [];
+
+  if (extractedName) {
+    const normalizedName = normalizeRetailerName(extractedName);
+    updates.retailerName = normalizedName;
+    found.push("name");
+  }
+
+  let logoResult = { dataUrl: null, error: "missing" };
+  if (logoUrl) {
+    logoResult = await fetchImageAsDataUrl(logoUrl, MAX_CUSTOM_LOGO_BYTES);
+  }
+
+  if (logoResult.dataUrl) {
+    updates.customLogoDataUrl = logoResult.dataUrl;
+    updates.customLogoInvert = await shouldInvertLogoDataUrl(logoResult.dataUrl);
+    found.push("logo");
+  } else {
+    issues.push(describeImageFailure("Logo", logoResult.error));
+  }
+
+  let faviconResult = { dataUrl: null, error: "missing" };
+  if (faviconUrl) {
+    faviconResult = await fetchImageAsDataUrl(faviconUrl, MAX_CUSTOM_FAVICON_BYTES);
+  }
+
+  if (faviconResult.dataUrl) {
+    updates.customFaviconDataUrl = faviconResult.dataUrl;
+    found.push("favicon");
+  } else {
+    issues.push(describeImageFailure("Favicon", faviconResult.error));
+  }
+
+  return { updates, found, issues };
+}
+
+function finalizeAutoFill(sequence) {
+  if (sequence !== autoFillSequence) {
+    return;
+  }
+
+  autoFillInProgress = false;
+  setAutoFillButtonsDisabled(false);
+}
+
+function collectBrandingFromActiveTab() {
+  function getMetaContent(selectors) {
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (!element) {
+        continue;
+      }
+
+      const content = element.getAttribute("content");
+      if (content && content.trim()) {
+        return content.trim();
+      }
+    }
+
+    return "";
+  }
+
+  function getFirstAttributeValue(selectors, attributeName) {
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (!element) {
+        continue;
+      }
+
+      const value = element.getAttribute(attributeName);
+      if (value && value.trim()) {
+        return value.trim();
+      }
+    }
+
+    return "";
+  }
+
+  function collectLinkCandidates(selector) {
+    return Array.from(document.querySelectorAll(selector))
+      .map((element) => ({
+        href: element.getAttribute("href"),
+        sizes: element.getAttribute("sizes")
+      }))
+      .filter((entry) => entry.href && entry.href.trim());
+  }
+
+  function parseIconSizes(value) {
+    if (!value || value.trim().toLowerCase() === "any") {
+      return [];
+    }
+
+    return value
+      .split(/\s+/)
+      .map((token) => {
+        const match = token.match(/(\d+)\s*[xX]\s*(\d+)/);
+        if (!match) {
+          return null;
+        }
+
+        const width = Number.parseInt(match[1], 10);
+        const height = Number.parseInt(match[2], 10);
+
+        if (!Number.isFinite(width) || !Number.isFinite(height)) {
+          return null;
+        }
+
+        return Math.max(width, height);
+      })
+      .filter((size) => Number.isFinite(size));
+  }
+
+  function selectIconHref(links, preferLargest) {
+    if (!Array.isArray(links) || links.length === 0) {
+      return "";
+    }
+
+    let selected = null;
+    let selectedSize = preferLargest ? -1 : Number.POSITIVE_INFINITY;
+
+    links.forEach((link) => {
+      const sizes = parseIconSizes(link.sizes);
+      const size = sizes.length
+        ? preferLargest
+          ? Math.max(...sizes)
+          : Math.min(...sizes)
+        : null;
+
+      if (size === null) {
+        if (!selected) {
+          selected = link;
+        }
+        return;
+      }
+
+      const shouldReplace = preferLargest ? size > selectedSize : size < selectedSize;
+      if (shouldReplace) {
+        selected = link;
+        selectedSize = size;
+      }
+    });
+
+    return selected ? selected.href : links[0].href;
+  }
+
+  function resolveUrl(value, baseUrl) {
+    if (typeof value !== "string") {
+      return "";
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "";
+    }
+
+    if (trimmed.startsWith("data:image/")) {
+      return trimmed;
+    }
+
+    if (trimmed.startsWith("blob:")) {
+      return "";
+    }
+
+    try {
+      return new URL(trimmed, baseUrl).toString();
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function getElementKeywords(element) {
+    if (!element) {
+      return "";
+    }
+
+    return [
+      element.getAttribute("class"),
+      element.getAttribute("id"),
+      element.getAttribute("aria-label"),
+      element.getAttribute("data-testid"),
+      element.getAttribute("role")
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function hasLogoAncestor(element) {
+    if (!element || typeof element.closest !== "function") {
+      return false;
+    }
+
+    const logoElement = element.closest(
+      '[class*="logo" i], [id*="logo" i], [aria-label*="logo" i], [data-testid*="logo" i]'
+    );
+
+    if (!logoElement) {
+      return false;
+    }
+
+    const keywords = getElementKeywords(logoElement);
+    if (keywords.includes("search")) {
+      return false;
+    }
+
+    return true;
+  }
+
+  function isSearchContext(element) {
+    if (!element) {
+      return false;
+    }
+
+    const keywords = getElementKeywords(element);
+    if (keywords.includes("search")) {
+      return !hasLogoAncestor(element);
+    }
+
+    const searchAncestor = element.closest(
+      '[class*="search" i], [id*="search" i], [aria-label*="search" i], [role="search" i], form[action*="search" i]'
+    );
+
+    if (searchAncestor) {
+      return !hasLogoAncestor(element);
+    }
+
+    return false;
+  }
+
+  function getElementArea(element) {
+    if (!element || typeof element.getBoundingClientRect !== "function") {
+      return 0;
+    }
+
+    const rect = element.getBoundingClientRect();
+    return rect.width * rect.height;
+  }
+
+  function svgToDataUrl(svgElement) {
+    if (!svgElement) {
+      return "";
+    }
+
+    const clone = svgElement.cloneNode(true);
+
+    if (clone && !clone.getAttribute("xmlns")) {
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    }
+
+    const serializer = new XMLSerializer();
+    const svgString = serializer.serializeToString(clone);
+
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svgString)}`;
+  }
+
+  function findImageLogo() {
+    const selectors = [
+      'header a[class*="logo" i] img',
+      'header a[aria-label*="home" i] img',
+      'header img[src*="logo" i]',
+      'a[class*="logo" i] img',
+      'a[aria-label*="home" i] img',
+      'img[src*="logo" i]',
+      'img[data-src*="logo" i]',
+      'img[alt*="logo" i]',
+      'img[class*="logo" i]',
+      'img[id*="logo" i]'
+    ];
+
+    for (const selector of selectors) {
+      const elements = document.querySelectorAll(selector);
+      for (const element of elements) {
+        if (isSearchContext(element)) {
+          continue;
+        }
+
+        const src =
+          element.getAttribute("src") || element.getAttribute("data-src");
+        if (src && src.trim()) {
+          return src.trim();
+        }
+
+        const srcset = element.getAttribute("srcset");
+        if (srcset) {
+          const firstCandidate = srcset.split(",")[0] || "";
+          const url = firstCandidate.trim().split(/\s+/)[0];
+          if (url) {
+            return url;
+          }
+        }
+      }
+    }
+
+    return "";
+  }
+
+  function getSvgLogoScore(svgElement, normalizedName) {
+    if (!svgElement || isSearchContext(svgElement)) {
+      return -1;
+    }
+
+    const area = getElementArea(svgElement);
+    if (area && area < 900) {
+      return -1;
+    }
+
+    let score = 0;
+    if (area) {
+      score += Math.min(area / 1000, 6);
+    }
+
+    const keywords = getElementKeywords(svgElement);
+    if (keywords.includes("logo") || keywords.includes("brand")) {
+      score += 3;
+    }
+
+    if (
+      svgElement.closest(
+        'a[class*="logo" i], a[aria-label*="logo" i], a[aria-label*="home" i]'
+      )
+    ) {
+      score += 3;
+    }
+
+    if (svgElement.closest("header, nav, [role=\"banner\"]")) {
+      score += 1;
+    }
+
+    const titleNode = svgElement.querySelector("title");
+    if (normalizedName && titleNode) {
+      const titleText = (titleNode.textContent || "").trim().toLowerCase();
+      if (titleText && (titleText.includes(normalizedName) || normalizedName.includes(titleText))) {
+        score += 4;
+      }
+    }
+
+    if (svgElement.getAttribute("aria-hidden") === "true") {
+      score -= 0.5;
+    }
+
+    return score;
+  }
+
+  function findInlineSvgLogo(extractedName) {
+    const selectors = [
+      "header svg[data-testid*=\"logo\" i]",
+      "header svg[aria-label*=\"logo\" i]",
+      "header svg[class*=\"logo\" i]",
+      "header svg[id*=\"logo\" i]",
+      "svg[data-testid*=\"logo\" i]",
+      "svg[aria-label*=\"logo\" i]",
+      "svg[class*=\"logo\" i]",
+      "svg[id*=\"logo\" i]"
+    ];
+
+    const normalizedName = extractedName ? extractedName.trim().toLowerCase() : "";
+    const candidates = new Set();
+
+    selectors.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((element) => {
+        candidates.add(element);
+      });
+    });
+
+    if (normalizedName) {
+      const titleNodes = document.querySelectorAll("svg title");
+      for (const titleNode of titleNodes) {
+        const text = (titleNode.textContent || "").trim().toLowerCase();
+        if (text && (text.includes(normalizedName) || normalizedName.includes(text))) {
+          const svgElement = titleNode.closest("svg");
+          if (svgElement) {
+            candidates.add(svgElement);
+          }
+        }
+      }
+    }
+
+    let bestCandidate = null;
+    let bestScore = 0;
+
+    candidates.forEach((svgElement) => {
+      const score = getSvgLogoScore(svgElement, normalizedName);
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = svgElement;
+      }
+    });
+
+    return bestCandidate ? svgToDataUrl(bestCandidate) : "";
+  }
+
+  const pageUrl = location.href || "";
+  const baseUrl = document.baseURI || pageUrl || "";
+
+  const nameCandidates = [
+    getMetaContent([
+      'meta[property="og:site_name" i]',
+      'meta[name="application-name" i]',
+      'meta[name="apple-mobile-web-app-title" i]'
+    ]),
+    getMetaContent([
+      'meta[property="og:title" i]',
+      'meta[name="twitter:title" i]'
+    ]),
+    typeof document.title === "string" ? document.title : ""
+  ];
+
+  let extractedName = "";
+
+  for (const candidate of nameCandidates) {
+    const trimmed = candidate.trim();
+    if (trimmed) {
+      extractedName = trimmed;
+      break;
+    }
+  }
+
+  if (!extractedName && pageUrl) {
+    try {
+      extractedName = new URL(pageUrl).hostname.replace(/^www\./i, "");
+    } catch (error) {
+      extractedName = "";
+    }
+  }
+
+  const metaLogo = getMetaContent([
+    'meta[property="og:logo" i]',
+    'meta[name="logo" i]',
+    'meta[itemprop="logo" i]'
+  ]);
+  const linkLogo = getFirstAttributeValue(['link[rel~="logo" i]'], "href");
+  const imageLogo = findImageLogo();
+  const appleLinks = collectLinkCandidates('link[rel~="apple-touch-icon" i]');
+  const appleHref = selectIconHref(appleLinks, true);
+  const ogImage = getMetaContent([
+    'meta[property="og:image" i]',
+    'meta[property="og:image:url" i]',
+    'meta[property="og:image:secure_url" i]',
+    'meta[name="twitter:image" i]',
+    'meta[name="twitter:image:src" i]'
+  ]);
+  const iconLinks = collectLinkCandidates(
+    'link[rel~="icon" i], link[rel~="shortcut" i]'
+  );
+  const iconHref = selectIconHref(iconLinks, true);
+  const inlineSvgLogo = findInlineSvgLogo(extractedName);
+
+  const logoCandidates = [
+    imageLogo,
+    inlineSvgLogo,
+    metaLogo,
+    linkLogo,
+    appleHref,
+    ogImage,
+    iconHref
+  ];
+
+  let logoUrl = "";
+  for (const candidate of logoCandidates) {
+    const resolved = resolveUrl(candidate, baseUrl);
+    if (resolved) {
+      logoUrl = resolved;
+      break;
+    }
+  }
+
+  const faviconLinks = collectLinkCandidates(
+    'link[rel~="icon" i], link[rel~="shortcut" i], link[rel~="mask-icon" i]'
+  );
+  const faviconHref = selectIconHref(faviconLinks, false);
+  const appleSmallHref = selectIconHref(appleLinks, false);
+
+  const faviconCandidates = [faviconHref, appleSmallHref];
+  let faviconUrl = "";
+
+  for (const candidate of faviconCandidates) {
+    const resolved = resolveUrl(candidate, baseUrl);
+    if (resolved) {
+      faviconUrl = resolved;
+      break;
+    }
+  }
+
+  if (!faviconUrl && pageUrl) {
+    try {
+      faviconUrl = new URL("/favicon.ico", pageUrl).toString();
+    } catch (error) {
+      faviconUrl = "";
+    }
+  }
+
+  return {
+    extractedName,
+    logoUrl,
+    faviconUrl,
+    pageUrl
+  };
+}
+
+function isRestrictedTabUrl(url) {
+  if (!url) {
+    return false;
+  }
+
+  return !/^https?:/i.test(url);
+}
+
+function describeActiveTabFailure(url) {
+  if (!url) {
+    return "Open a website tab to auto grab branding.";
+  }
+
+  if (/^(chrome|edge|about|moz-extension|chrome-extension):/i.test(url)) {
+    return "Active tab is a browser page. Open a website and try again.";
+  }
+
+  if (/^file:/i.test(url)) {
+    return "Active tab is a local file. Open a website and try again.";
+  }
+
+  return "Active tab cannot be accessed. Open a website and try again.";
+}
+
+async function autoFillFromActiveTab() {
   if (autoFillInProgress) {
     return;
   }
-
-  const rawValue = retailerUrlInput.value ?? "";
-
-  if (!rawValue.trim()) {
-    const newState = {
-      ...state,
-      retailerUrl: DEFAULT_RETAILER_URL
-    };
-
-    applyState(newState);
-    persistRetailerUrl(DEFAULT_RETAILER_URL);
-    setRetailerUrlStatus("Enter a retailer URL to auto fill branding.");
-    return;
-  }
-
-  const parsedUrl = parseRetailerUrl(rawValue);
-
-  if (!parsedUrl) {
-    setRetailerUrlStatus("Enter a valid URL to auto fill branding.", true);
-    return;
-  }
-
-  const normalizedUrl = parsedUrl.toString();
-  const newState = {
-    ...state,
-    retailerUrl: normalizedUrl
-  };
-
-  applyState(newState);
-  persistRetailerUrl(normalizedUrl);
 
   autoFillInProgress = true;
   autoFillSequence += 1;
   const currentSequence = autoFillSequence;
 
-  retailerUrlAutoButton.disabled = true;
-  setRetailerUrlStatus(`Fetching branding from ${parsedUrl.hostname}...`);
+  setAutoFillButtonsDisabled(true);
+  setAutoGrabStatus("Reading branding from the active tab...");
 
-  try {
-    const { document, baseUrl } = await fetchRetailerDocument(normalizedUrl);
-
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (currentSequence !== autoFillSequence) {
       return;
     }
 
-    const extractedName = extractRetailerName(document, parsedUrl);
-    const logoUrl = extractLogoUrl(document, baseUrl);
-    const faviconUrl = extractFaviconUrl(document, baseUrl, parsedUrl);
-
-    const updates = {};
-    const found = [];
-    const issues = [];
-
-    if (extractedName) {
-      const normalizedName = normalizeRetailerName(extractedName);
-      updates.retailerName = normalizedName;
-      found.push("name");
+    if (chrome.runtime.lastError) {
+      console.error("Unable to read active tab", chrome.runtime.lastError);
+      setAutoGrabStatus("Unable to read the active tab.", true);
+      finalizeAutoFill(currentSequence);
+      return;
     }
 
-    let logoResult = { dataUrl: null, error: "missing" };
-    if (logoUrl) {
-      logoResult = await fetchImageAsDataUrl(logoUrl, MAX_CUSTOM_LOGO_BYTES);
+    const tab = Array.isArray(tabs) ? tabs[0] : null;
+
+    if (!tab || !tab.id) {
+      setAutoGrabStatus(describeActiveTabFailure(tab?.url), true);
+      finalizeAutoFill(currentSequence);
+      return;
     }
 
-    if (logoResult.dataUrl) {
-      updates.customLogoDataUrl = logoResult.dataUrl;
-      found.push("logo");
-    } else {
-      issues.push(describeImageFailure("Logo", logoResult.error));
+    if (tab.url && isRestrictedTabUrl(tab.url)) {
+      setAutoGrabStatus(describeActiveTabFailure(tab.url), true);
+      finalizeAutoFill(currentSequence);
+      return;
     }
 
-    let faviconResult = { dataUrl: null, error: "missing" };
-    if (faviconUrl) {
-      faviconResult = await fetchImageAsDataUrl(
-        faviconUrl,
-        MAX_CUSTOM_FAVICON_BYTES
-      );
-    }
+    chrome.scripting.executeScript(
+      {
+        target: { tabId: tab.id },
+        func: collectBrandingFromActiveTab
+      },
+      async (results) => {
+        if (currentSequence !== autoFillSequence) {
+          return;
+        }
 
-    if (faviconResult.dataUrl) {
-      updates.customFaviconDataUrl = faviconResult.dataUrl;
-      found.push("favicon");
-    } else {
-      issues.push(describeImageFailure("Favicon", faviconResult.error));
-    }
+        if (chrome.runtime.lastError) {
+          console.error("Unable to read branding from active tab", chrome.runtime.lastError);
+          setAutoGrabStatus(describeActiveTabFailure(tab.url), true);
+          finalizeAutoFill(currentSequence);
+          return;
+        }
 
-    if (Object.keys(updates).length > 0) {
-      const updatedState = buildUpdatedState(updates);
-      applyState(updatedState);
-    }
+        const payload =
+          Array.isArray(results) && results[0] ? results[0].result : null;
 
-    if (Object.prototype.hasOwnProperty.call(updates, RETAILER_NAME_STORAGE_KEY)) {
-      persistRetailerName(updates.retailerName);
-    }
+        if (!payload) {
+          setAutoGrabStatus("No branding data found on the active tab.", true);
+          finalizeAutoFill(currentSequence);
+          return;
+        }
 
-    if (Object.prototype.hasOwnProperty.call(updates, CUSTOM_LOGO_STORAGE_KEY)) {
-      persistCustomLogo(updates.customLogoDataUrl);
-    }
+        try {
+          const { updates, found, issues } = await buildAutoFillUpdates({
+            extractedName: payload.extractedName,
+            logoUrl: payload.logoUrl,
+            faviconUrl: payload.faviconUrl
+          });
 
-    if (Object.prototype.hasOwnProperty.call(updates, CUSTOM_FAVICON_STORAGE_KEY)) {
-      persistCustomFavicon(updates.customFaviconDataUrl);
-    }
+          if (Object.keys(updates).length > 0) {
+            const updatedState = buildUpdatedState(updates);
+            applyState(updatedState);
+          }
 
-    if (found.length === 0) {
-      setRetailerUrlStatus("No branding assets found for that URL.", true);
-    } else {
-      const messageParts = [`Auto-filled ${formatFeatureList(found)}.`];
-      if (issues.length > 0) {
-        messageParts.push(issues.join(" "));
+          if (Object.prototype.hasOwnProperty.call(updates, RETAILER_NAME_STORAGE_KEY)) {
+            persistRetailerName(updates.retailerName);
+          }
+
+          if (Object.prototype.hasOwnProperty.call(updates, CUSTOM_LOGO_STORAGE_KEY)) {
+            persistCustomLogo(
+              updates.customLogoDataUrl,
+              updates.customLogoInvert
+            );
+          }
+
+          if (
+            Object.prototype.hasOwnProperty.call(updates, CUSTOM_FAVICON_STORAGE_KEY)
+          ) {
+            persistCustomFavicon(updates.customFaviconDataUrl);
+          }
+
+          if (found.length === 0) {
+            setAutoGrabStatus("No branding assets found on the active tab.", true);
+          } else {
+            const messageParts = [`Auto-filled ${formatFeatureList(found)}.`];
+            if (issues.length > 0) {
+              messageParts.push(issues.join(" "));
+            }
+            setAutoGrabStatus(messageParts.join(" "));
+          }
+        } catch (error) {
+          console.error("Unable to auto fill branding from active tab", error);
+          setAutoGrabStatus("Unable to fetch branding from the active tab.", true);
+        } finally {
+          finalizeAutoFill(currentSequence);
+        }
       }
-      setRetailerUrlStatus(messageParts.join(" "));
-    }
-  } catch (error) {
-    console.error("Unable to auto fill branding", error);
-    if (currentSequence === autoFillSequence) {
-      setRetailerUrlStatus("Unable to fetch branding from that URL.", true);
-    }
-  } finally {
-    if (currentSequence === autoFillSequence) {
-      autoFillInProgress = false;
-      retailerUrlAutoButton.disabled = false;
-    }
-  }
+    );
+  });
 }
 
 logoToggle.addEventListener("change", () => {
@@ -989,19 +1295,8 @@ textToggle.addEventListener("change", () => {
   persistState(newState);
 });
 
-retailerUrlAutoButton.addEventListener("click", () => {
-  autoFillFromRetailerUrl();
-});
-
-retailerUrlInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    autoFillFromRetailerUrl();
-  }
-});
-
-retailerUrlInput.addEventListener("change", () => {
-  autoFillFromRetailerUrl();
+retailerTabAutoButton.addEventListener("click", () => {
+  autoFillFromActiveTab();
 });
 
 retailerNameInput.addEventListener("change", () => {
@@ -1046,11 +1341,12 @@ customLogoInput.addEventListener("change", () => {
 
     const newState = {
       ...state,
-      customLogoDataUrl: dataUrl
+      customLogoDataUrl: dataUrl,
+      customLogoInvert: false
     };
 
     applyState(newState);
-    persistCustomLogo(dataUrl);
+    persistCustomLogo(dataUrl, false);
     customLogoInput.value = "";
   });
 
@@ -1066,11 +1362,12 @@ customLogoClearButton.addEventListener("click", () => {
 
   const newState = {
     ...state,
-    customLogoDataUrl: null
+    customLogoDataUrl: null,
+    customLogoInvert: false
   };
 
   applyState(newState);
-  persistCustomLogo(null);
+  persistCustomLogo(null, false);
 });
 
 customFaviconInput.addEventListener("change", () => {
@@ -1156,11 +1453,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
       hasUpdate = true;
     }
 
-    if (Object.prototype.hasOwnProperty.call(changes, RETAILER_URL_STORAGE_KEY)) {
-      update.retailerUrl = changes[RETAILER_URL_STORAGE_KEY].newValue;
-      hasUpdate = true;
-    }
-
     if (!hasUpdate && Object.prototype.hasOwnProperty.call(changes, "enabled")) {
       update.enabled = changes.enabled.newValue;
       hasUpdate = true;
@@ -1170,6 +1462,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local") {
     if (Object.prototype.hasOwnProperty.call(changes, CUSTOM_LOGO_STORAGE_KEY)) {
       update.customLogoDataUrl = changes[CUSTOM_LOGO_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(changes, CUSTOM_LOGO_INVERT_STORAGE_KEY)
+    ) {
+      update.customLogoInvert = changes[CUSTOM_LOGO_INVERT_STORAGE_KEY].newValue;
       hasUpdate = true;
     }
 
