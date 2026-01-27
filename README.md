@@ -2,8 +2,15 @@
 
 A local Chrome extension that applies "Demo Retailer" branding to key elements
 used in Criteo Retail Media demos. When enabled, it replaces the header logo with
-an inline "Demo Retailer" logo and updates the account name text. The original
-content is restored when the toggle is turned off.
+an inline "Demo Retailer" logo and updates the account name text and favicon. 
+
+Automated Feature: 
+There is a feature to automatically grab all of these assets from the retailer. 
+Step 1: go to the retailers page
+Step 2: click Auto grab from active tab
+Step 3: turn on the replacement toggles and you will see Logo, Favicon and Retailer name replaced
+
+The original content is not touched, it is just client side changes for demo purposes.
 
 ## Getting started
 
