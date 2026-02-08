@@ -30,23 +30,6 @@
           Get latest version
         </a>
       </section>
-      <section class="toggles" aria-label="Branding options">
-        <label class="toggle" for="logo-toggle">
-          <span class="label-text">Replace logo</span>
-          <input id="logo-toggle" type="checkbox" />
-          <span class="slider" aria-hidden="true"></span>
-        </label>
-        <label class="toggle" for="favicon-toggle">
-          <span class="label-text">Replace favicon</span>
-          <input id="favicon-toggle" type="checkbox" />
-          <span class="slider" aria-hidden="true"></span>
-        </label>
-        <label class="toggle" for="text-toggle">
-          <span class="label-text">Replace account name</span>
-          <input id="text-toggle" type="checkbox" />
-          <span class="slider" aria-hidden="true"></span>
-        </label>
-      </section>
       <section class="retailer-auto" aria-label="Auto grab branding">
         <label class="retailer-auto-label" for="retailer-tab-auto">
           Auto grab branding
@@ -62,7 +45,14 @@
         ></p>
       </section>
       <section class="retailer-name" aria-label="Retailer name">
-        <label class="retailer-name-label" for="retailer-name-input">Retailer name</label>
+        <div class="section-heading">
+          <label class="retailer-name-label" for="retailer-name-input">Retailer name</label>
+          <label class="toggle toggle-inline" for="text-toggle">
+            <span class="label-text">Replace</span>
+            <input id="text-toggle" type="checkbox" />
+            <span class="slider" aria-hidden="true"></span>
+          </label>
+        </div>
         <input
           id="retailer-name-input"
           class="retailer-name-input"
@@ -129,7 +119,14 @@
         ></p>
       </section>
       <section class="custom-logo" aria-label="Custom logo">
-        <label class="custom-logo-label" for="custom-logo-input">Custom logo</label>
+        <div class="section-heading">
+          <label class="custom-logo-label" for="custom-logo-input">Custom logo</label>
+          <label class="toggle toggle-inline" for="logo-toggle">
+            <span class="label-text">Replace</span>
+            <input id="logo-toggle" type="checkbox" />
+            <span class="slider" aria-hidden="true"></span>
+          </label>
+        </div>
         <div class="custom-logo-controls">
           <input
             id="custom-logo-input"
@@ -157,7 +154,14 @@
         ></p>
       </section>
       <section class="custom-favicon" aria-label="Custom favicon">
-        <label class="custom-favicon-label" for="custom-favicon-input">Custom favicon</label>
+        <div class="section-heading">
+          <label class="custom-favicon-label" for="custom-favicon-input">Custom favicon</label>
+          <label class="toggle toggle-inline" for="favicon-toggle">
+            <span class="label-text">Replace</span>
+            <input id="favicon-toggle" type="checkbox" />
+            <span class="slider" aria-hidden="true"></span>
+          </label>
+        </div>
         <div class="custom-favicon-controls">
           <input
             id="custom-favicon-input"

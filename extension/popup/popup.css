@@ -68,12 +68,6 @@ main {
   }
 }
 
-.toggles {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .retailer-auto {
   display: flex;
   flex-direction: column;
@@ -394,6 +388,13 @@ main {
   color: #ff6b6b;
 }
 
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .title {
   margin: 0;
   font-size: 16px;
@@ -410,6 +411,33 @@ main {
 
 .label-text {
   flex: 1;
+}
+
+.toggle-inline {
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.toggle-inline .label-text {
+  flex: 0;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.toggle-inline .slider {
+  width: 40px;
+  height: 22px;
+}
+
+.toggle-inline .slider::after {
+  width: 16px;
+  height: 16px;
+}
+
+.toggle.toggle-inline input:checked + .slider::after {
+  transform: translateX(18px);
 }
 
 .toggle input {
