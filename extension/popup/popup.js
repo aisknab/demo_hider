@@ -17,6 +17,9 @@ const customFaviconPreviewImage = document.getElementById("custom-favicon-previe
 const customFaviconStatus = document.getElementById("custom-favicon-status");
 const currencySelect = document.getElementById("currency-select");
 const currencyStatus = document.getElementById("currency-status");
+const extensionUpdateCurrent = document.getElementById("extension-update-current");
+const extensionUpdateStatus = document.getElementById("extension-update-status");
+const extensionUpdateLink = document.getElementById("extension-update-link");
 
 const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
 const CUSTOM_LOGO_INVERT_STORAGE_KEY = "customLogoInvert";
@@ -86,6 +89,12 @@ const CURRENCY_API_ENDPOINTS = [
   ).join(",")}`,
   "https://open.er-api.com/v6/latest/USD"
 ];
+const GITHUB_REPOSITORY = "aisknab/demo_hider";
+const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY}`;
+const GITHUB_RELEASES_PAGE_URL = `https://github.com/${GITHUB_REPOSITORY}/releases`;
+const GITHUB_RELEASE_LATEST_API_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`;
+const GITHUB_TAGS_API_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}/tags?per_page=1`;
+const GITHUB_BRANCH_CANDIDATES = ["main", "master"];
 
 const state = {
   logoEnabled: false,
@@ -363,6 +372,346 @@ function setAutoGrabStatus(message, isError = false) {
 
 function setAutoFillButtonsDisabled(disabled) {
   retailerTabAutoButton.disabled = disabled;
+}
+
+function setExtensionUpdateStatus(message, isError = false) {
+  if (!extensionUpdateStatus) {
+    return;
+  }
+
+  extensionUpdateStatus.textContent = message;
+
+  if (isError) {
+    extensionUpdateStatus.setAttribute("data-error", "true");
+  } else {
+    extensionUpdateStatus.removeAttribute("data-error");
+  }
+}
+
+function hideExtensionUpdateLink() {
+  if (!extensionUpdateLink) {
+    return;
+  }
+
+  extensionUpdateLink.hidden = true;
+  extensionUpdateLink.removeAttribute("href");
+}
+
+function toHttpUrl(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.toString();
+    }
+  } catch (error) {
+    return "";
+  }
+
+  return "";
+}
+
+function showExtensionUpdateLink(url, text = "Get latest version") {
+  if (!extensionUpdateLink) {
+    return;
+  }
+
+  extensionUpdateLink.href = toHttpUrl(url) || GITHUB_RELEASES_PAGE_URL;
+  extensionUpdateLink.textContent = text;
+  extensionUpdateLink.hidden = false;
+}
+
+function normalizeVersionString(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.replace(/^v/i, "");
+}
+
+function parseVersion(version) {
+  const normalized = normalizeVersionString(version);
+  if (!normalized) {
+    return null;
+  }
+
+  const [corePart, preReleasePart = ""] = normalized.split("-", 2);
+  const coreSegments = corePart.split(".").map((segment) => {
+    const numeric = Number.parseInt(segment, 10);
+    return Number.isFinite(numeric) ? numeric : 0;
+  });
+  const preReleaseSegments = preReleasePart
+    ? preReleasePart.split(".").filter((segment) => segment.length > 0)
+    : [];
+
+  return {
+    coreSegments,
+    preReleaseSegments
+  };
+}
+
+function comparePreReleaseSegments(leftSegments, rightSegments) {
+  const maxLength = Math.max(leftSegments.length, rightSegments.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const left = leftSegments[index];
+    const right = rightSegments[index];
+
+    if (typeof left === "undefined") {
+      return -1;
+    }
+
+    if (typeof right === "undefined") {
+      return 1;
+    }
+
+    const leftIsNumeric = /^\d+$/.test(left);
+    const rightIsNumeric = /^\d+$/.test(right);
+
+    if (leftIsNumeric && rightIsNumeric) {
+      const leftNumber = Number.parseInt(left, 10);
+      const rightNumber = Number.parseInt(right, 10);
+
+      if (leftNumber !== rightNumber) {
+        return leftNumber < rightNumber ? -1 : 1;
+      }
+
+      continue;
+    }
+
+    if (leftIsNumeric && !rightIsNumeric) {
+      return -1;
+    }
+
+    if (!leftIsNumeric && rightIsNumeric) {
+      return 1;
+    }
+
+    const comparison = left.localeCompare(right, undefined, {
+      sensitivity: "base"
+    });
+
+    if (comparison !== 0) {
+      return comparison < 0 ? -1 : 1;
+    }
+  }
+
+  return 0;
+}
+
+function compareVersions(currentVersion, latestVersion) {
+  const current = parseVersion(currentVersion);
+  const latest = parseVersion(latestVersion);
+
+  if (!current || !latest) {
+    return 0;
+  }
+
+  const maxCoreSegments = Math.max(
+    current.coreSegments.length,
+    latest.coreSegments.length
+  );
+
+  for (let index = 0; index < maxCoreSegments; index += 1) {
+    const currentSegment = current.coreSegments[index] || 0;
+    const latestSegment = latest.coreSegments[index] || 0;
+
+    if (currentSegment !== latestSegment) {
+      return currentSegment < latestSegment ? -1 : 1;
+    }
+  }
+
+  const currentHasPreRelease = current.preReleaseSegments.length > 0;
+  const latestHasPreRelease = latest.preReleaseSegments.length > 0;
+
+  if (!currentHasPreRelease && latestHasPreRelease) {
+    return 1;
+  }
+
+  if (currentHasPreRelease && !latestHasPreRelease) {
+    return -1;
+  }
+
+  if (!currentHasPreRelease && !latestHasPreRelease) {
+    return 0;
+  }
+
+  return comparePreReleaseSegments(
+    current.preReleaseSegments,
+    latest.preReleaseSegments
+  );
+}
+
+function getGitHubManifestUrl(branch) {
+  return `https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${branch}/manifest.json`;
+}
+
+function getGitHubArchiveUrl(branch) {
+  return `https://github.com/${GITHUB_REPOSITORY}/archive/refs/heads/${branch}.zip`;
+}
+
+async function fetchLatestVersionFromManifestBranch(branch) {
+  if (!branch) {
+    return null;
+  }
+
+  const response = await fetch(getGitHubManifestUrl(branch), {
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const manifestPayload = await response.json();
+  const latestVersion = normalizeVersionString(
+    manifestPayload && manifestPayload.version
+  );
+
+  if (!latestVersion) {
+    return null;
+  }
+
+  return {
+    latestVersion,
+    downloadUrl: getGitHubArchiveUrl(branch)
+  };
+}
+
+async function fetchLatestGitHubVersion() {
+  const headers = {
+    Accept: "application/vnd.github+json"
+  };
+  let lastError = null;
+
+  try {
+    const releaseResponse = await fetch(GITHUB_RELEASE_LATEST_API_URL, {
+      cache: "no-store",
+      headers
+    });
+
+    if (releaseResponse.ok) {
+      const releasePayload = await releaseResponse.json();
+      const rawTag =
+        typeof releasePayload.tag_name === "string"
+          ? releasePayload.tag_name
+          : releasePayload.name;
+      const latestVersion = normalizeVersionString(rawTag);
+
+      if (latestVersion) {
+        return {
+          latestVersion,
+          downloadUrl:
+            toHttpUrl(releasePayload.html_url) || GITHUB_RELEASES_PAGE_URL
+        };
+      }
+    } else if (releaseResponse.status !== 404) {
+      lastError = new Error(
+        `GitHub release lookup failed with status ${releaseResponse.status}.`
+      );
+    }
+  } catch (error) {
+    lastError = error;
+  }
+
+  try {
+    const tagsResponse = await fetch(GITHUB_TAGS_API_URL, {
+      cache: "no-store",
+      headers
+    });
+
+    if (tagsResponse.ok) {
+      const tagsPayload = await tagsResponse.json();
+      const firstTag =
+        Array.isArray(tagsPayload) &&
+        tagsPayload[0] &&
+        typeof tagsPayload[0].name === "string"
+          ? tagsPayload[0].name
+          : "";
+      const latestVersion = normalizeVersionString(firstTag);
+
+      if (latestVersion) {
+        return {
+          latestVersion,
+          downloadUrl: `${GITHUB_RELEASES_PAGE_URL}/tag/${encodeURIComponent(
+            firstTag
+          )}`
+        };
+      }
+    } else {
+      lastError = new Error(
+        `GitHub tag lookup failed with status ${tagsResponse.status}.`
+      );
+    }
+  } catch (error) {
+    lastError = error;
+  }
+
+  for (const branch of GITHUB_BRANCH_CANDIDATES) {
+    try {
+      const manifestVersion = await fetchLatestVersionFromManifestBranch(branch);
+      if (manifestVersion) {
+        return manifestVersion;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("No GitHub release, tag, or manifest version was found.");
+}
+
+async function checkForExtensionUpdates() {
+  const currentVersion = normalizeVersionString(
+    chrome.runtime.getManifest().version
+  );
+
+  if (extensionUpdateCurrent) {
+    extensionUpdateCurrent.textContent = currentVersion
+      ? `Current: v${currentVersion}`
+      : "Current: unknown";
+  }
+
+  hideExtensionUpdateLink();
+  setExtensionUpdateStatus("Checking for updates...");
+
+  try {
+    const latest = await fetchLatestGitHubVersion();
+    const comparison = compareVersions(currentVersion, latest.latestVersion);
+
+    if (comparison < 0) {
+      setExtensionUpdateStatus(`New version available: v${latest.latestVersion}.`);
+      showExtensionUpdateLink(latest.downloadUrl, "Open update on GitHub");
+      return;
+    }
+
+    if (comparison > 0) {
+      setExtensionUpdateStatus(
+        `You are on v${currentVersion} (newer than GitHub v${latest.latestVersion}).`
+      );
+      showExtensionUpdateLink(GITHUB_RELEASES_PAGE_URL, "View GitHub releases");
+      return;
+    }
+
+    setExtensionUpdateStatus(`You are on the latest version (v${currentVersion}).`);
+  } catch (error) {
+    console.error("Unable to check extension updates", error);
+    setExtensionUpdateStatus("Unable to check for updates right now.", true);
+    showExtensionUpdateLink(GITHUB_REPOSITORY_URL, "Open repository");
+  }
 }
 
 function updateCustomFaviconUi() {
@@ -2745,3 +3094,4 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 syncStateWithStorage();
+void checkForExtensionUpdates();

@@ -8,6 +8,28 @@
   <body>
     <main>
       <h1 class="title">Branding options</h1>
+      <section class="extension-update" aria-label="Extension updates">
+        <div class="extension-update-heading">
+          <span class="extension-update-label">Extension updates</span>
+          <span class="extension-update-current" id="extension-update-current"></span>
+        </div>
+        <p
+          class="extension-update-status"
+          id="extension-update-status"
+          role="status"
+          aria-live="polite"
+        ></p>
+        <a
+          id="extension-update-link"
+          class="extension-update-link"
+          href="#"
+          target="_blank"
+          rel="noopener noreferrer"
+          hidden
+        >
+          Get latest version
+        </a>
+      </section>
       <section class="toggles" aria-label="Branding options">
         <label class="toggle" for="logo-toggle">
           <span class="label-text">Replace logo</span>

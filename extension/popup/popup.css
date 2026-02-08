@@ -25,6 +25,49 @@ main {
   gap: 12px;
 }
 
+.extension-update {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.extension-update-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.extension-update-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.extension-update-current {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.extension-update-status {
+  margin: 0;
+  font-size: 12px;
+}
+
+.extension-update-status[data-error="true"] {
+  color: #ff6b6b;
+}
+
+.extension-update-link {
+  font-size: 12px;
+  color: #8ab4f8;
+}
+
+@media (prefers-color-scheme: light) {
+  .extension-update-link {
+    color: #0b57d0;
+  }
+}
+
 .toggles {
   display: flex;
   flex-direction: column;
