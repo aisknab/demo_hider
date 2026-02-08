@@ -115,6 +115,80 @@ main {
   }
 }
 
+.currency {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+@media (prefers-color-scheme: light) {
+  .currency {
+    border-top-color: rgba(0, 0, 0, 0.12);
+  }
+}
+
+.currency-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.currency-select {
+  width: 100%;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #666;
+  background-color: #2a2a2a;
+  color: #f5f5f5;
+  color-scheme: dark;
+}
+
+.currency-select option {
+  background-color: #2a2a2a;
+  color: #f5f5f5;
+}
+
+.currency-select optgroup {
+  background-color: #2a2a2a;
+  color: #d7d7d7;
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: light) {
+  .currency-select {
+    border-color: #c0c0c0;
+    background-color: #ffffff;
+    color: #1f1f1f;
+    color-scheme: light;
+  }
+
+  .currency-select option {
+    background-color: #ffffff;
+    color: #1f1f1f;
+  }
+
+  .currency-select optgroup {
+    background-color: #ffffff;
+    color: #4a4a4a;
+  }
+}
+
+.currency-select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.currency-status {
+  margin: 0;
+  font-size: 12px;
+}
+
+.currency-status[data-error="true"] {
+  color: #ff6b6b;
+}
+
 .custom-logo {
   display: flex;
   flex-direction: column;
@@ -336,3 +410,4 @@ main {
   font-size: 12px;
   color: inherit;
 }
+

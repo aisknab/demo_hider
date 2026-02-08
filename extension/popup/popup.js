@@ -15,6 +15,8 @@ const customFaviconClearButton = document.getElementById("custom-favicon-clear")
 const customFaviconPreview = document.getElementById("custom-favicon-preview");
 const customFaviconPreviewImage = document.getElementById("custom-favicon-preview-image");
 const customFaviconStatus = document.getElementById("custom-favicon-status");
+const currencySelect = document.getElementById("currency-select");
+const currencyStatus = document.getElementById("currency-status");
 
 const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
 const CUSTOM_LOGO_INVERT_STORAGE_KEY = "customLogoInvert";
@@ -31,6 +33,59 @@ const LOGO_INVERT_ALPHA_THRESHOLD = 16;
 const LOGO_INVERT_RATIO = 0.9;
 const LOGO_INVERT_MAX_DARK_RATIO = 0.02;
 const LOGO_INVERT_MIN_OPAQUE_PIXELS = 20;
+const SELECTED_CURRENCY_STORAGE_KEY = "selectedCurrency";
+const CURRENCY_RATES_STORAGE_KEY = "currencyRates";
+const CURRENCY_RATES_UPDATED_AT_STORAGE_KEY = "currencyRatesUpdatedAt";
+const DEFAULT_SELECTED_CURRENCY = "USD";
+const CURRENCY_CODES = [
+  "USD",
+  "CAD",
+  "MXN",
+  "BRL",
+  "ARS",
+  "CLP",
+  "COP",
+  "PEN",
+  "EUR",
+  "GBP",
+  "CHF",
+  "SEK",
+  "NOK",
+  "DKK",
+  "PLN",
+  "CZK",
+  "HUF",
+  "RON",
+  "TRY",
+  "ZAR",
+  "AED",
+  "SAR",
+  "ILS",
+  "JPY",
+  "AUD",
+  "NZD",
+  "CNY",
+  "HKD",
+  "SGD",
+  "KRW",
+  "THB",
+  "VND",
+  "PHP",
+  "IDR",
+  "MYR",
+  "INR",
+  "TWD",
+  "PKR",
+  "BDT",
+  "LKR"
+];
+const CURRENCY_RATE_CACHE_TTL_MS = 1000 * 60 * 60 * 6;
+const CURRENCY_API_ENDPOINTS = [
+  `https://api.frankfurter.app/latest?from=USD&to=${CURRENCY_CODES.filter(
+    (code) => code !== "USD"
+  ).join(",")}`,
+  "https://open.er-api.com/v6/latest/USD"
+];
 
 const state = {
   logoEnabled: false,
@@ -39,7 +94,10 @@ const state = {
   customLogoDataUrl: null,
   customLogoInvert: false,
   customFaviconDataUrl: null,
-  retailerName: DEFAULT_RETAILER_NAME
+  retailerName: DEFAULT_RETAILER_NAME,
+  selectedCurrency: DEFAULT_SELECTED_CURRENCY,
+  currencyRates: { USD: 1 },
+  currencyRatesUpdatedAt: 0
 };
 
 function getStatusMessage(currentState) {
@@ -103,6 +161,153 @@ function normalizeCustomLogoInvert(value, dataUrl) {
   }
 
   return Boolean(value);
+}
+
+function normalizeCurrencyCode(value) {
+  if (typeof value !== "string") {
+    return DEFAULT_SELECTED_CURRENCY;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return CURRENCY_CODES.includes(normalized)
+    ? normalized
+    : DEFAULT_SELECTED_CURRENCY;
+}
+
+function normalizeCurrencyRates(value) {
+  const normalizedRates = { USD: 1 };
+
+  if (!value || typeof value !== "object") {
+    return normalizedRates;
+  }
+
+  CURRENCY_CODES.forEach((code) => {
+    if (code === "USD") {
+      normalizedRates.USD = 1;
+      return;
+    }
+
+    const rate = Number(value[code]);
+    if (Number.isFinite(rate) && rate > 0) {
+      normalizedRates[code] = rate;
+    }
+  });
+
+  return normalizedRates;
+}
+
+function normalizeCurrencyRatesUpdatedAt(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return 0;
+  }
+
+  return Math.floor(timestamp);
+}
+
+function getCurrencyRateFromRates(currencyCode, rates) {
+  const normalizedCode = normalizeCurrencyCode(currencyCode);
+
+  if (normalizedCode === DEFAULT_SELECTED_CURRENCY) {
+    return 1;
+  }
+
+  if (!rates || typeof rates !== "object") {
+    return null;
+  }
+
+  const rate = Number(rates[normalizedCode]);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return null;
+  }
+
+  return rate;
+}
+
+function getSelectedCurrencyRate() {
+  return getCurrencyRateFromRates(state.selectedCurrency, state.currencyRates);
+}
+
+function formatCurrencyTimestamp(timestamp) {
+  if (!timestamp) {
+    return "unknown time";
+  }
+
+  try {
+    return new Date(timestamp).toLocaleString();
+  } catch (error) {
+    return "unknown time";
+  }
+}
+
+function setCurrencyStatus(message, isError = false) {
+  if (!currencyStatus) {
+    return;
+  }
+
+  currencyStatus.textContent = message;
+
+  if (isError) {
+    currencyStatus.setAttribute("data-error", "true");
+  } else {
+    currencyStatus.removeAttribute("data-error");
+  }
+}
+
+function setCurrencySelectorDisabled(disabled) {
+  if (!currencySelect) {
+    return;
+  }
+
+  currencySelect.disabled = disabled;
+}
+
+function hasFreshCurrencyRate(currencyCode) {
+  const normalizedCode = normalizeCurrencyCode(currencyCode);
+
+  if (normalizedCode === DEFAULT_SELECTED_CURRENCY) {
+    return true;
+  }
+
+  const rate = getCurrencyRateFromRates(normalizedCode, state.currencyRates);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return false;
+  }
+
+  if (!state.currencyRatesUpdatedAt) {
+    return false;
+  }
+
+  return Date.now() - state.currencyRatesUpdatedAt <= CURRENCY_RATE_CACHE_TTL_MS;
+}
+
+function updateCurrencyUi() {
+  if (!currencySelect) {
+    return;
+  }
+
+  if (document.activeElement !== currencySelect) {
+    currencySelect.value = state.selectedCurrency;
+  }
+
+  const selectedCurrency = state.selectedCurrency;
+
+  if (selectedCurrency === DEFAULT_SELECTED_CURRENCY) {
+    setCurrencyStatus("Dollar amounts stay in USD.");
+    return;
+  }
+
+  const rate = getSelectedCurrencyRate();
+  if (!Number.isFinite(rate) || rate <= 0) {
+    setCurrencyStatus(
+      `No conversion rate available for ${selectedCurrency}. Select again to retry.`,
+      true
+    );
+    return;
+  }
+
+  const updatedAt = formatCurrencyTimestamp(state.currencyRatesUpdatedAt);
+  setCurrencyStatus(`USD -> ${selectedCurrency}: ${rate.toFixed(4)} (updated ${updatedAt})`);
 }
 
 function setCustomLogoStatus(message, isError = false) {
@@ -199,6 +404,11 @@ function applyState(newState) {
     newState.customFaviconDataUrl
   );
   state.retailerName = normalizeRetailerName(newState.retailerName);
+  state.selectedCurrency = normalizeCurrencyCode(newState.selectedCurrency);
+  state.currencyRates = normalizeCurrencyRates(newState.currencyRates);
+  state.currencyRatesUpdatedAt = normalizeCurrencyRatesUpdatedAt(
+    newState.currencyRatesUpdatedAt
+  );
 
   logoToggle.checked = state.logoEnabled;
   faviconToggle.checked = state.faviconEnabled;
@@ -211,6 +421,7 @@ function applyState(newState) {
   statusElement.textContent = getStatusMessage(state);
   updateCustomLogoUi();
   updateCustomFaviconUi();
+  updateCurrencyUi();
 }
 
 function buildUpdatedState(partial) {
@@ -221,7 +432,10 @@ function buildUpdatedState(partial) {
     customLogoDataUrl: state.customLogoDataUrl,
     customLogoInvert: state.customLogoInvert,
     customFaviconDataUrl: state.customFaviconDataUrl,
-    retailerName: state.retailerName
+    retailerName: state.retailerName,
+    selectedCurrency: state.selectedCurrency,
+    currencyRates: state.currencyRates,
+    currencyRatesUpdatedAt: state.currencyRatesUpdatedAt
   };
 
   const hasLogo = Object.prototype.hasOwnProperty.call(partial, "logoEnabled");
@@ -242,6 +456,18 @@ function buildUpdatedState(partial) {
   const hasRetailerName = Object.prototype.hasOwnProperty.call(
     partial,
     RETAILER_NAME_STORAGE_KEY
+  );
+  const hasSelectedCurrency = Object.prototype.hasOwnProperty.call(
+    partial,
+    SELECTED_CURRENCY_STORAGE_KEY
+  );
+  const hasCurrencyRates = Object.prototype.hasOwnProperty.call(
+    partial,
+    CURRENCY_RATES_STORAGE_KEY
+  );
+  const hasCurrencyRatesUpdatedAt = Object.prototype.hasOwnProperty.call(
+    partial,
+    CURRENCY_RATES_UPDATED_AT_STORAGE_KEY
   );
 
   if (hasLogo) {
@@ -272,6 +498,18 @@ function buildUpdatedState(partial) {
     newState.retailerName = partial.retailerName;
   }
 
+  if (hasSelectedCurrency) {
+    newState.selectedCurrency = partial.selectedCurrency;
+  }
+
+  if (hasCurrencyRates) {
+    newState.currencyRates = partial.currencyRates;
+  }
+
+  if (hasCurrencyRatesUpdatedAt) {
+    newState.currencyRatesUpdatedAt = partial.currencyRatesUpdatedAt;
+  }
+
   if (
     !hasLogo &&
     !hasFavicon &&
@@ -299,22 +537,35 @@ function syncStateWithStorage() {
       faviconEnabled: DEFAULT_FAVICON_ENABLED,
       textEnabled: false,
       enabled: false,
-      retailerName: DEFAULT_RETAILER_NAME
+      retailerName: DEFAULT_RETAILER_NAME,
+      selectedCurrency: DEFAULT_SELECTED_CURRENCY
     },
     (result) => {
       chrome.storage.local.get(
         {
           customLogoDataUrl: null,
           customLogoInvert: false,
-          customFaviconDataUrl: null
+          customFaviconDataUrl: null,
+          currencyRates: { USD: 1 },
+          currencyRatesUpdatedAt: 0
         },
         (localResult) => {
           updateState({
             ...result,
             customLogoDataUrl: localResult.customLogoDataUrl,
             customLogoInvert: localResult.customLogoInvert,
-            customFaviconDataUrl: localResult.customFaviconDataUrl
+            customFaviconDataUrl: localResult.customFaviconDataUrl,
+            currencyRates: localResult.currencyRates,
+            currencyRatesUpdatedAt: localResult.currencyRatesUpdatedAt
           });
+
+          const selectedCurrency = normalizeCurrencyCode(result.selectedCurrency);
+          if (
+            selectedCurrency !== DEFAULT_SELECTED_CURRENCY &&
+            !hasFreshCurrencyRate(selectedCurrency)
+          ) {
+            void applySelectedCurrency(selectedCurrency, { forceRefresh: true });
+          }
         }
       );
     }
@@ -386,6 +637,172 @@ function persistRetailerName(name) {
       }
     }
   );
+}
+
+function persistSelectedCurrency(code) {
+  chrome.storage.sync.set(
+    {
+      selectedCurrency: normalizeCurrencyCode(code)
+    },
+    () => {
+      if (chrome.runtime.lastError) {
+        console.error("Unable to persist selected currency", chrome.runtime.lastError);
+        syncStateWithStorage();
+      }
+    }
+  );
+}
+
+function persistCurrencyRates(rates, updatedAt) {
+  chrome.storage.local.set(
+    {
+      currencyRates: normalizeCurrencyRates(rates),
+      currencyRatesUpdatedAt: normalizeCurrencyRatesUpdatedAt(updatedAt)
+    },
+    () => {
+      if (chrome.runtime.lastError) {
+        console.error("Unable to persist currency rates", chrome.runtime.lastError);
+        setCurrencyStatus("Unable to cache conversion rates.", true);
+      }
+    }
+  );
+}
+
+async function fetchLatestCurrencyRates(requiredCurrencyCode = null) {
+  const normalizedRequiredCurrency =
+    requiredCurrencyCode && requiredCurrencyCode !== DEFAULT_SELECTED_CURRENCY
+      ? normalizeCurrencyCode(requiredCurrencyCode)
+      : null;
+  let lastError = null;
+
+  for (const endpoint of CURRENCY_API_ENDPOINTS) {
+    let response;
+
+    try {
+      response = await fetch(endpoint, { cache: "no-store" });
+    } catch (error) {
+      lastError = error;
+      continue;
+    }
+
+    if (!response.ok) {
+      lastError = new Error(`Currency API request failed (${response.status}).`);
+      continue;
+    }
+
+    let payload;
+
+    try {
+      payload = await response.json();
+    } catch (error) {
+      lastError = new Error("Currency API returned invalid JSON.");
+      continue;
+    }
+
+    const normalizedRates = normalizeCurrencyRates(payload && payload.rates);
+    const hasAtLeastOneRate = CURRENCY_CODES.some((code) => {
+      if (code === DEFAULT_SELECTED_CURRENCY) {
+        return false;
+      }
+
+      const rate = Number(normalizedRates[code]);
+      return Number.isFinite(rate) && rate > 0;
+    });
+
+    if (!hasAtLeastOneRate) {
+      lastError = new Error("Currency API response did not include usable rates.");
+      continue;
+    }
+
+    if (normalizedRequiredCurrency) {
+      const requiredRate = Number(normalizedRates[normalizedRequiredCurrency]);
+
+      if (!Number.isFinite(requiredRate) || requiredRate <= 0) {
+        lastError = new Error(
+          `Currency API response did not include ${normalizedRequiredCurrency} rate.`
+        );
+        continue;
+      }
+    }
+
+    return {
+      rates: normalizedRates,
+      updatedAt: Date.now()
+    };
+  }
+
+  throw lastError || new Error("Unable to reach currency APIs.");
+}
+
+async function applySelectedCurrency(nextCurrencyCode, options = {}) {
+  const forceRefresh = Boolean(options.forceRefresh);
+  const normalizedCode = normalizeCurrencyCode(nextCurrencyCode);
+  const previousCode = state.selectedCurrency;
+
+  if (normalizedCode === previousCode && !forceRefresh) {
+    updateCurrencyUi();
+    return;
+  }
+
+  setCurrencySelectorDisabled(true);
+
+  try {
+    let nextRates = state.currencyRates;
+    let nextUpdatedAt = state.currencyRatesUpdatedAt;
+    let usedCachedRates = false;
+
+    if (
+      normalizedCode !== DEFAULT_SELECTED_CURRENCY &&
+      (!hasFreshCurrencyRate(normalizedCode) || forceRefresh)
+    ) {
+      const cachedRate = getCurrencyRateFromRates(normalizedCode, state.currencyRates);
+
+      try {
+        setCurrencyStatus("Fetching latest conversion rates...");
+        const fetched = await fetchLatestCurrencyRates(normalizedCode);
+        nextRates = fetched.rates;
+        nextUpdatedAt = fetched.updatedAt;
+        persistCurrencyRates(nextRates, nextUpdatedAt);
+      } catch (error) {
+        if (!Number.isFinite(cachedRate) || cachedRate <= 0) {
+          console.error("Unable to fetch exchange rates", error);
+          setCurrencyStatus("Unable to fetch exchange rates right now. Try again.", true);
+          applyState({
+            ...state,
+            selectedCurrency: previousCode
+          });
+          return;
+        }
+
+        usedCachedRates = true;
+        console.error("Unable to refresh exchange rates; using cached rates", error);
+      }
+    }
+
+    const nextState = {
+      ...state,
+      selectedCurrency: normalizedCode,
+      currencyRates: nextRates,
+      currencyRatesUpdatedAt: nextUpdatedAt
+    };
+
+    applyState(nextState);
+    persistSelectedCurrency(normalizedCode);
+
+    if (usedCachedRates) {
+      const selectedRate = getSelectedCurrencyRate();
+
+      if (Number.isFinite(selectedRate) && selectedRate > 0) {
+        setCurrencyStatus(
+          `Using cached USD -> ${normalizedCode} rate: ${selectedRate.toFixed(4)}.`
+        );
+      } else {
+        setCurrencyStatus("Using cached conversion rates.");
+      }
+    }
+  } finally {
+    setCurrencySelectorDisabled(false);
+  }
 }
 
 let autoFillInProgress = false;
@@ -2127,6 +2544,12 @@ retailerNameInput.addEventListener("change", () => {
   persistRetailerName(newName);
 });
 
+if (currencySelect) {
+  currencySelect.addEventListener("change", () => {
+    void applySelectedCurrency(currencySelect.value);
+  });
+}
+
 customLogoInput.addEventListener("change", () => {
   const file = customLogoInput.files && customLogoInput.files[0];
 
@@ -2270,6 +2693,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
       hasUpdate = true;
     }
 
+    if (Object.prototype.hasOwnProperty.call(changes, SELECTED_CURRENCY_STORAGE_KEY)) {
+      update.selectedCurrency = changes[SELECTED_CURRENCY_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
     if (!hasUpdate && Object.prototype.hasOwnProperty.call(changes, "enabled")) {
       update.enabled = changes.enabled.newValue;
       hasUpdate = true;
@@ -2293,6 +2721,22 @@ chrome.storage.onChanged.addListener((changes, area) => {
       update.customFaviconDataUrl = changes[CUSTOM_FAVICON_STORAGE_KEY].newValue;
       hasUpdate = true;
     }
+
+    if (Object.prototype.hasOwnProperty.call(changes, CURRENCY_RATES_STORAGE_KEY)) {
+      update.currencyRates = changes[CURRENCY_RATES_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        changes,
+        CURRENCY_RATES_UPDATED_AT_STORAGE_KEY
+      )
+    ) {
+      update.currencyRatesUpdatedAt =
+        changes[CURRENCY_RATES_UPDATED_AT_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
   }
 
   if (hasUpdate) {
@@ -2301,4 +2745,3 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 syncStateWithStorage();
-

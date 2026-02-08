@@ -30,6 +30,59 @@ const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
 const CUSTOM_LOGO_INVERT_STORAGE_KEY = "customLogoInvert";
 const CUSTOM_FAVICON_STORAGE_KEY = "customFaviconDataUrl";
 const RETAILER_NAME_STORAGE_KEY = "retailerName";
+const SELECTED_CURRENCY_STORAGE_KEY = "selectedCurrency";
+const CURRENCY_RATES_STORAGE_KEY = "currencyRates";
+const CURRENCY_RATES_UPDATED_AT_STORAGE_KEY = "currencyRatesUpdatedAt";
+const DEFAULT_SELECTED_CURRENCY = "USD";
+const CURRENCY_CODES = [
+  "USD",
+  "CAD",
+  "MXN",
+  "BRL",
+  "ARS",
+  "CLP",
+  "COP",
+  "PEN",
+  "EUR",
+  "GBP",
+  "CHF",
+  "SEK",
+  "NOK",
+  "DKK",
+  "PLN",
+  "CZK",
+  "HUF",
+  "RON",
+  "TRY",
+  "ZAR",
+  "AED",
+  "SAR",
+  "ILS",
+  "JPY",
+  "AUD",
+  "NZD",
+  "CNY",
+  "HKD",
+  "SGD",
+  "KRW",
+  "THB",
+  "VND",
+  "PHP",
+  "IDR",
+  "MYR",
+  "INR",
+  "TWD",
+  "PKR",
+  "BDT",
+  "LKR"
+];
+const DOLLAR_AMOUNT_TEST_PATTERN =
+  /\$\s*-?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.\d+)?/;
+const DOLLAR_AMOUNT_REPLACE_PATTERN =
+  /\$\s*(-?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.\d+)?)/g;
+const LEADING_AMOUNT_PATTERN =
+  /^\s*(-?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.\d+)?)/;
+const TRAILING_DOLLAR_PATTERN = /^(.*)\$\s*$/;
 const CUSTOM_LOGO_ATTR = "data-demo-hider-custom-logo";
 const CUSTOM_FAVICON_ATTR = "data-demo-hider-custom-favicon";
 const ORIGINAL_TEXT_ATTR = "data-demo-hider-original-text";
@@ -41,7 +94,10 @@ const state = {
   customLogoInvert: false,
   customFaviconDataUrl: null,
   faviconEnabled: DEFAULT_FAVICON_ENABLED,
-  retailerName: DEFAULT_RETAILER_NAME
+  retailerName: DEFAULT_RETAILER_NAME,
+  selectedCurrency: DEFAULT_SELECTED_CURRENCY,
+  currencyRates: { USD: 1 },
+  currencyRatesUpdatedAt: 0
 };
 let observer;
 let isInitialized = false;
@@ -54,6 +110,10 @@ let originalAccountNameSource = null;
 let originalDocumentTitle = null;
 let lastAppliedDocumentTitle = null;
 const replacedTextNodes = new Map();
+const currencyReplacedTextNodes = new Map();
+const currencyFormatterCache = new Map();
+const observedCurrencyShadowRoots = new WeakSet();
+const currencyShadowObservers = [];
 const retailerCellOriginalContent = new Map();
 const RETAILER_CELL_TEXT_PROPERTY_NAMES = [
   "text",
@@ -168,6 +228,481 @@ function normalizeCustomLogoInvert(value, dataUrl) {
   }
 
   return Boolean(value);
+}
+
+function normalizeCurrencyCode(value) {
+  if (typeof value !== "string") {
+    return DEFAULT_SELECTED_CURRENCY;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return CURRENCY_CODES.includes(normalized)
+    ? normalized
+    : DEFAULT_SELECTED_CURRENCY;
+}
+
+function normalizeCurrencyRates(value) {
+  const normalizedRates = { USD: 1 };
+
+  if (!value || typeof value !== "object") {
+    return normalizedRates;
+  }
+
+  CURRENCY_CODES.forEach((code) => {
+    if (code === "USD") {
+      normalizedRates.USD = 1;
+      return;
+    }
+
+    const rate = Number(value[code]);
+    if (Number.isFinite(rate) && rate > 0) {
+      normalizedRates[code] = rate;
+    }
+  });
+
+  return normalizedRates;
+}
+
+function normalizeCurrencyRatesUpdatedAt(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return 0;
+  }
+
+  return Math.floor(timestamp);
+}
+
+function areCurrencyRatesEqual(first, second) {
+  const normalizedFirst = normalizeCurrencyRates(first);
+  const normalizedSecond = normalizeCurrencyRates(second);
+
+  return CURRENCY_CODES.every((code) => {
+    return normalizedFirst[code] === normalizedSecond[code];
+  });
+}
+
+function getCurrencyRate(currencyCode) {
+  const normalizedCode = normalizeCurrencyCode(currencyCode);
+
+  if (normalizedCode === DEFAULT_SELECTED_CURRENCY) {
+    return 1;
+  }
+
+  const rate = Number(state.currencyRates[normalizedCode]);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return null;
+  }
+
+  return rate;
+}
+
+function getCurrencyFormatter(currencyCode) {
+  const normalizedCode = normalizeCurrencyCode(currencyCode);
+
+  if (currencyFormatterCache.has(normalizedCode)) {
+    return currencyFormatterCache.get(normalizedCode);
+  }
+
+  let formatter;
+
+  try {
+    formatter = new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: normalizedCode
+    });
+  } catch (error) {
+    formatter = new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: DEFAULT_SELECTED_CURRENCY
+    });
+  }
+
+  currencyFormatterCache.set(normalizedCode, formatter);
+  return formatter;
+}
+
+function formatCurrencyValue(value, currencyCode) {
+  return getCurrencyFormatter(currencyCode).format(value);
+}
+
+function containsDollarAmount(value) {
+  if (typeof value !== "string" || !value.includes("$")) {
+    return false;
+  }
+
+  return DOLLAR_AMOUNT_TEST_PATTERN.test(value);
+}
+
+function convertDollarAmountsInText(value, currencyCode, rate) {
+  if (!containsDollarAmount(value)) {
+    return value;
+  }
+
+  return value.replace(
+    DOLLAR_AMOUNT_REPLACE_PATTERN,
+    (match, amountToken) => {
+      const amount = Number.parseFloat(String(amountToken).replace(/,/g, ""));
+
+      if (!Number.isFinite(amount)) {
+        return match;
+      }
+
+      const convertedAmount = amount * rate;
+      return formatCurrencyValue(convertedAmount, currencyCode);
+    }
+  );
+}
+
+function getCurrencyEntryOriginalValue(entry) {
+  if (typeof entry === "string") {
+    return entry;
+  }
+
+  if (
+    entry &&
+    typeof entry === "object" &&
+    typeof entry.originalText === "string"
+  ) {
+    return entry.originalText;
+  }
+
+  return "";
+}
+
+function getCurrencyEntryConvertedValue(entry) {
+  if (
+    entry &&
+    typeof entry === "object" &&
+    typeof entry.lastConvertedText === "string"
+  ) {
+    return entry.lastConvertedText;
+  }
+
+  return "";
+}
+
+function resolveCurrencyNodeValues(node) {
+  const currentValue = node.nodeValue ?? "";
+  const storedEntry = currencyReplacedTextNodes.get(node);
+  const storedOriginalValue = getCurrencyEntryOriginalValue(storedEntry);
+  const storedConvertedValue = getCurrencyEntryConvertedValue(storedEntry);
+
+  let originalValue = currentValue;
+
+  if (storedOriginalValue) {
+    const hasKnownCurrentValue =
+      currentValue === storedOriginalValue ||
+      (storedConvertedValue && currentValue === storedConvertedValue);
+    originalValue = hasKnownCurrentValue ? storedOriginalValue : currentValue;
+  }
+
+  return {
+    currentValue,
+    originalValue,
+    storedEntry
+  };
+}
+
+function containsDollarSymbol(value) {
+  return typeof value === "string" && value.includes("$");
+}
+
+function isIgnoredCurrencyTextNode(node) {
+  const parent = node ? node.parentNode : null;
+  return Boolean(parent && EXCLUDED_TEXT_PARENT_NODES.has(parent.nodeName));
+}
+
+function collectCurrencyTraversalRoots() {
+  if (!document.documentElement) {
+    return [];
+  }
+
+  const roots = [];
+  const queue = [document.documentElement];
+  const visited = new Set();
+
+  while (queue.length > 0) {
+    const root = queue.shift();
+
+    if (!root || visited.has(root)) {
+      continue;
+    }
+
+    visited.add(root);
+    roots.push(root);
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+
+    while (walker.nextNode()) {
+      const element = walker.currentNode;
+
+      if (element && element.shadowRoot && !visited.has(element.shadowRoot)) {
+        queue.push(element.shadowRoot);
+      }
+    }
+  }
+
+  return roots;
+}
+
+function ensureCurrencyShadowObservers() {
+  if (typeof ShadowRoot === "undefined") {
+    return;
+  }
+
+  const roots = collectCurrencyTraversalRoots();
+
+  roots.forEach((root) => {
+    if (!(root instanceof ShadowRoot)) {
+      return;
+    }
+
+    if (observedCurrencyShadowRoots.has(root)) {
+      return;
+    }
+
+    const observer = new MutationObserver(() => {
+      applyCurrencyCustomizations();
+      ensureCurrencyShadowObservers();
+    });
+
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+
+    observedCurrencyShadowRoots.add(root);
+    currencyShadowObservers.push(observer);
+  });
+}
+
+function applyConvertedCurrencyValue(node, originalValue, convertedValue, currentValue) {
+  const entryExists = currencyReplacedTextNodes.has(node);
+
+  if (convertedValue === originalValue) {
+    if (entryExists) {
+      currencyReplacedTextNodes.delete(node);
+
+      if (currentValue !== originalValue) {
+        node.nodeValue = originalValue;
+      }
+    }
+
+    return;
+  }
+
+  currencyReplacedTextNodes.set(node, {
+    originalText: originalValue,
+    lastConvertedText: convertedValue
+  });
+
+  if (currentValue !== convertedValue) {
+    node.nodeValue = convertedValue;
+  }
+}
+
+function tryConvertSplitDollarAmount(nodes, startIndex, selectedCurrency, rate) {
+  const firstNode = nodes[startIndex];
+  const firstValues = resolveCurrencyNodeValues(firstNode);
+  const firstOriginalValue = firstValues.originalValue;
+
+  if (!containsDollarSymbol(firstOriginalValue) || containsDollarAmount(firstOriginalValue)) {
+    return null;
+  }
+
+  const trailingDollarMatch = firstOriginalValue.match(TRAILING_DOLLAR_PATTERN);
+  if (!trailingDollarMatch) {
+    return null;
+  }
+
+  let secondNode = null;
+  let secondValues = null;
+  let secondIndex = startIndex + 1;
+
+  while (secondIndex < nodes.length) {
+    const candidateNode = nodes[secondIndex];
+    const candidateValues = resolveCurrencyNodeValues(candidateNode);
+    const candidateOriginalValue = candidateValues.originalValue;
+
+    if (candidateOriginalValue.length === 0 || /^\s+$/.test(candidateOriginalValue)) {
+      secondIndex += 1;
+      continue;
+    }
+
+    secondNode = candidateNode;
+    secondValues = candidateValues;
+    break;
+  }
+
+  if (!secondNode || !secondValues) {
+    return null;
+  }
+
+  const secondOriginalValue = secondValues.originalValue;
+  const amountMatch = secondOriginalValue.match(LEADING_AMOUNT_PATTERN);
+
+  if (!amountMatch) {
+    return null;
+  }
+
+  const numericToken = amountMatch[1];
+  const amount = Number.parseFloat(String(numericToken).replace(/,/g, ""));
+
+  if (!Number.isFinite(amount)) {
+    return null;
+  }
+
+  const convertedAmountText = formatCurrencyValue(amount * rate, selectedCurrency);
+  const updatedFirstValue = `${trailingDollarMatch[1]}${convertedAmountText}`;
+  const consumedPrefixLength = amountMatch[0].length;
+  const updatedSecondValue = secondOriginalValue.slice(consumedPrefixLength);
+
+  applyConvertedCurrencyValue(
+    firstNode,
+    firstOriginalValue,
+    updatedFirstValue,
+    firstValues.currentValue
+  );
+  applyConvertedCurrencyValue(
+    secondNode,
+    secondOriginalValue,
+    updatedSecondValue,
+    secondValues.currentValue
+  );
+
+  return {
+    secondNode
+  };
+}
+
+function collectCurrencyCandidateTextNodes(root) {
+  const nodes = [];
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (isIgnoredCurrencyTextNode(node)) {
+        return NodeFilter.FILTER_REJECT;
+      }
+
+      const values = resolveCurrencyNodeValues(node);
+      const hasCandidateDollarAmount =
+        containsDollarSymbol(values.currentValue) ||
+        containsDollarSymbol(values.originalValue);
+
+      if (!hasCandidateDollarAmount) {
+        return NodeFilter.FILTER_REJECT;
+      }
+
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+
+  while (walker.nextNode()) {
+    nodes.push(walker.currentNode);
+  }
+
+  return nodes;
+}
+
+function restoreCurrencyCustomizations() {
+  currencyReplacedTextNodes.forEach((entry, node) => {
+    if (!node || !node.isConnected) {
+      return;
+    }
+
+    const originalValue = getCurrencyEntryOriginalValue(entry);
+
+    if (typeof originalValue === "string" && node.nodeValue !== originalValue) {
+      node.nodeValue = originalValue;
+    }
+  });
+
+  currencyReplacedTextNodes.clear();
+}
+
+function applyCurrencyCustomizations() {
+  if (!document.documentElement) {
+    return;
+  }
+
+  ensureCurrencyShadowObservers();
+
+  const selectedCurrency = normalizeCurrencyCode(state.selectedCurrency);
+
+  if (selectedCurrency === DEFAULT_SELECTED_CURRENCY) {
+    restoreCurrencyCustomizations();
+    return;
+  }
+
+  const rate = getCurrencyRate(selectedCurrency);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    restoreCurrencyCustomizations();
+    return;
+  }
+
+  const roots = collectCurrencyTraversalRoots();
+
+  roots.forEach((root) => {
+    const nodesToUpdate = collectCurrencyCandidateTextNodes(root);
+    const consumedNodes = new Set();
+
+    for (let index = 0; index < nodesToUpdate.length; index += 1) {
+      const node = nodesToUpdate[index];
+
+      if (consumedNodes.has(node)) {
+        continue;
+      }
+
+      const values = resolveCurrencyNodeValues(node);
+      const originalValue = values.originalValue;
+      const currentValue = values.currentValue;
+
+      if (!containsDollarSymbol(originalValue)) {
+        if (values.storedEntry) {
+          currencyReplacedTextNodes.delete(node);
+        }
+        continue;
+      }
+
+      if (containsDollarAmount(originalValue)) {
+        const convertedValue = convertDollarAmountsInText(
+          originalValue,
+          selectedCurrency,
+          rate
+        );
+
+        applyConvertedCurrencyValue(node, originalValue, convertedValue, currentValue);
+        continue;
+      }
+
+      const splitResult = tryConvertSplitDollarAmount(
+        nodesToUpdate,
+        index,
+        selectedCurrency,
+        rate
+      );
+
+      if (splitResult && splitResult.secondNode) {
+        consumedNodes.add(splitResult.secondNode);
+        continue;
+      }
+
+      if (values.storedEntry) {
+        currencyReplacedTextNodes.delete(node);
+
+        if (currentValue !== originalValue) {
+          node.nodeValue = originalValue;
+        }
+      }
+    }
+  });
+
+  currencyReplacedTextNodes.forEach((_, node) => {
+    if (!node || !node.isConnected) {
+      currencyReplacedTextNodes.delete(node);
+    }
+  });
 }
 
 function getActiveLogoDataUrl() {
@@ -1091,6 +1626,8 @@ function updateCustomizations() {
   } else {
     restoreAccountNameCustomizations();
   }
+
+  applyCurrencyCustomizations();
 }
 
 function ensureObserver() {
@@ -1110,6 +1647,8 @@ function ensureObserver() {
     if (state.textEnabled) {
       applyAccountNameCustomizations();
     }
+
+    applyCurrencyCustomizations();
   });
 
   observer.observe(document.documentElement, {
@@ -1127,6 +1666,11 @@ function applyState(newState, forceUpdate = false) {
     newState.customLogoInvert,
     normalizedCustomLogoDataUrl
   );
+  const normalizedSelectedCurrency = normalizeCurrencyCode(newState.selectedCurrency);
+  const normalizedCurrencyRates = normalizeCurrencyRates(newState.currencyRates);
+  const normalizedCurrencyRatesUpdatedAt = normalizeCurrencyRatesUpdatedAt(
+    newState.currencyRatesUpdatedAt
+  );
 
   const normalizedState = {
     logoEnabled: Boolean(newState.logoEnabled),
@@ -1137,7 +1681,10 @@ function applyState(newState, forceUpdate = false) {
     customFaviconDataUrl: normalizeCustomFaviconDataUrl(
       newState.customFaviconDataUrl
     ),
-    retailerName: normalizeRetailerName(newState.retailerName)
+    retailerName: normalizeRetailerName(newState.retailerName),
+    selectedCurrency: normalizedSelectedCurrency,
+    currencyRates: normalizedCurrencyRates,
+    currencyRatesUpdatedAt: normalizedCurrencyRatesUpdatedAt
   };
 
   const hasLogoDataUpdate =
@@ -1148,6 +1695,12 @@ function applyState(newState, forceUpdate = false) {
     normalizedState.customFaviconDataUrl !== state.customFaviconDataUrl;
   const hasRetailerNameUpdate =
     normalizedState.retailerName !== state.retailerName;
+  const hasSelectedCurrencyUpdate =
+    normalizedState.selectedCurrency !== state.selectedCurrency;
+  const hasCurrencyRatesUpdate =
+    !areCurrencyRatesEqual(normalizedState.currencyRates, state.currencyRates);
+  const hasCurrencyRatesUpdatedAtUpdate =
+    normalizedState.currencyRatesUpdatedAt !== state.currencyRatesUpdatedAt;
   const shouldRefreshLogo =
     normalizedState.logoEnabled &&
     (hasLogoDataUpdate || hasLogoInvertUpdate || hasRetailerNameUpdate);
@@ -1157,6 +1710,10 @@ function applyState(newState, forceUpdate = false) {
     (hasFaviconDataUpdate || hasRetailerNameUpdate);
   const shouldRefreshText =
     normalizedState.textEnabled && hasRetailerNameUpdate;
+  const shouldRefreshCurrency =
+    hasSelectedCurrencyUpdate ||
+    (normalizedState.selectedCurrency !== DEFAULT_SELECTED_CURRENCY &&
+      (hasCurrencyRatesUpdate || hasCurrencyRatesUpdatedAtUpdate));
   const hasChanged =
     normalizedState.logoEnabled !== state.logoEnabled ||
     normalizedState.faviconEnabled !== state.faviconEnabled ||
@@ -1164,7 +1721,8 @@ function applyState(newState, forceUpdate = false) {
     hasLogoInvertUpdate ||
     shouldRefreshLogo ||
     shouldRefreshFavicon ||
-    shouldRefreshText;
+    shouldRefreshText ||
+    shouldRefreshCurrency;
 
   if (hasRetailerNameUpdate && state.textEnabled) {
     restoreAccountNameCustomizations();
@@ -1177,6 +1735,9 @@ function applyState(newState, forceUpdate = false) {
   state.customLogoInvert = normalizedState.customLogoInvert;
   state.customFaviconDataUrl = normalizedState.customFaviconDataUrl;
   state.retailerName = normalizedState.retailerName;
+  state.selectedCurrency = normalizedState.selectedCurrency;
+  state.currencyRates = normalizedState.currencyRates;
+  state.currencyRatesUpdatedAt = normalizedState.currencyRatesUpdatedAt;
 
   if (hasChanged || forceUpdate) {
     updateCustomizations();
@@ -1191,7 +1752,10 @@ function setFeatureState(partial) {
     customLogoDataUrl: state.customLogoDataUrl,
     customLogoInvert: state.customLogoInvert,
     customFaviconDataUrl: state.customFaviconDataUrl,
-    retailerName: state.retailerName
+    retailerName: state.retailerName,
+    selectedCurrency: state.selectedCurrency,
+    currencyRates: state.currencyRates,
+    currencyRatesUpdatedAt: state.currencyRatesUpdatedAt
   };
 
   const hasLogo = Object.prototype.hasOwnProperty.call(partial, "logoEnabled");
@@ -1212,6 +1776,18 @@ function setFeatureState(partial) {
   const hasRetailerName = Object.prototype.hasOwnProperty.call(
     partial,
     RETAILER_NAME_STORAGE_KEY
+  );
+  const hasSelectedCurrency = Object.prototype.hasOwnProperty.call(
+    partial,
+    SELECTED_CURRENCY_STORAGE_KEY
+  );
+  const hasCurrencyRates = Object.prototype.hasOwnProperty.call(
+    partial,
+    CURRENCY_RATES_STORAGE_KEY
+  );
+  const hasCurrencyRatesUpdatedAt = Object.prototype.hasOwnProperty.call(
+    partial,
+    CURRENCY_RATES_UPDATED_AT_STORAGE_KEY
   );
 
   if (hasLogo) {
@@ -1242,6 +1818,18 @@ function setFeatureState(partial) {
     newState.retailerName = partial.retailerName;
   }
 
+  if (hasSelectedCurrency) {
+    newState.selectedCurrency = partial.selectedCurrency;
+  }
+
+  if (hasCurrencyRates) {
+    newState.currencyRates = partial.currencyRates;
+  }
+
+  if (hasCurrencyRatesUpdatedAt) {
+    newState.currencyRatesUpdatedAt = partial.currencyRatesUpdatedAt;
+  }
+
   if (
     !hasLogo &&
     !hasFavicon &&
@@ -1266,21 +1854,26 @@ function initialize() {
       faviconEnabled: DEFAULT_FAVICON_ENABLED,
       textEnabled: false,
       enabled: false,
-      retailerName: DEFAULT_RETAILER_NAME
+      retailerName: DEFAULT_RETAILER_NAME,
+      selectedCurrency: DEFAULT_SELECTED_CURRENCY
     },
     (result) => {
       chrome.storage.local.get(
         {
           customLogoDataUrl: null,
           customLogoInvert: false,
-          customFaviconDataUrl: null
+          customFaviconDataUrl: null,
+          currencyRates: { USD: 1 },
+          currencyRatesUpdatedAt: 0
         },
         (localResult) => {
           setFeatureState({
             ...result,
             customLogoDataUrl: localResult.customLogoDataUrl,
             customLogoInvert: localResult.customLogoInvert,
-            customFaviconDataUrl: localResult.customFaviconDataUrl
+            customFaviconDataUrl: localResult.customFaviconDataUrl,
+            currencyRates: localResult.currencyRates,
+            currencyRatesUpdatedAt: localResult.currencyRatesUpdatedAt
           });
         }
       );
@@ -1301,7 +1894,13 @@ chrome.runtime.onMessage.addListener((message) => {
       Object.prototype.hasOwnProperty.call(message, "faviconEnabled") ||
       Object.prototype.hasOwnProperty.call(message, "textEnabled") ||
       Object.prototype.hasOwnProperty.call(message, "enabled") ||
-      Object.prototype.hasOwnProperty.call(message, RETAILER_NAME_STORAGE_KEY))
+      Object.prototype.hasOwnProperty.call(message, RETAILER_NAME_STORAGE_KEY) ||
+      Object.prototype.hasOwnProperty.call(message, SELECTED_CURRENCY_STORAGE_KEY) ||
+      Object.prototype.hasOwnProperty.call(message, CURRENCY_RATES_STORAGE_KEY) ||
+      Object.prototype.hasOwnProperty.call(
+        message,
+        CURRENCY_RATES_UPDATED_AT_STORAGE_KEY
+      ))
   ) {
     setFeatureState(message);
   }
@@ -1332,6 +1931,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
       hasUpdate = true;
     }
 
+    if (Object.prototype.hasOwnProperty.call(changes, SELECTED_CURRENCY_STORAGE_KEY)) {
+      update.selectedCurrency = changes[SELECTED_CURRENCY_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
     if (!hasUpdate && Object.prototype.hasOwnProperty.call(changes, "enabled")) {
       update.enabled = changes.enabled.newValue;
       hasUpdate = true;
@@ -1355,10 +1959,25 @@ chrome.storage.onChanged.addListener((changes, area) => {
       update.customFaviconDataUrl = changes[CUSTOM_FAVICON_STORAGE_KEY].newValue;
       hasUpdate = true;
     }
+
+    if (Object.prototype.hasOwnProperty.call(changes, CURRENCY_RATES_STORAGE_KEY)) {
+      update.currencyRates = changes[CURRENCY_RATES_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        changes,
+        CURRENCY_RATES_UPDATED_AT_STORAGE_KEY
+      )
+    ) {
+      update.currencyRatesUpdatedAt =
+        changes[CURRENCY_RATES_UPDATED_AT_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
   }
 
   if (hasUpdate) {
     setFeatureState(update);
   }
 });
-

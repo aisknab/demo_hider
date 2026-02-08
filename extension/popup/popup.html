@@ -49,6 +49,63 @@
           autocomplete="off"
         />
       </section>
+      <section class="currency" aria-label="Currency conversion">
+        <label class="currency-label" for="currency-select">Currency</label>
+        <select id="currency-select" class="currency-select">
+          <optgroup label="US">
+            <option value="USD">US Dollar (USD, $)</option>
+            <option value="CAD">Canadian Dollar (CAD, C$)</option>
+            <option value="MXN">Mexican Peso (MXN, MX$)</option>
+            <option value="BRL">Brazilian Real (BRL, R$)</option>
+            <option value="ARS">Argentine Peso (ARS, AR$)</option>
+            <option value="CLP">Chilean Peso (CLP, CLP$)</option>
+            <option value="COP">Colombian Peso (COP, COP$)</option>
+            <option value="PEN">Peruvian Sol (PEN, S/)</option>
+          </optgroup>
+          <optgroup label="EMEA">
+            <option value="EUR">Euro (EUR, &euro;)</option>
+            <option value="GBP">British Pound (GBP, &pound;)</option>
+            <option value="CHF">Swiss Franc (CHF, Fr)</option>
+            <option value="SEK">Swedish Krona (SEK, kr)</option>
+            <option value="NOK">Norwegian Krone (NOK, kr)</option>
+            <option value="DKK">Danish Krone (DKK, kr)</option>
+            <option value="PLN">Polish Zloty (PLN, z&#322;)</option>
+            <option value="CZK">Czech Koruna (CZK, K&#269;)</option>
+            <option value="HUF">Hungarian Forint (HUF, Ft)</option>
+            <option value="RON">Romanian Leu (RON, lei)</option>
+            <option value="TRY">Turkish Lira (TRY, &#8378;)</option>
+            <option value="ZAR">South African Rand (ZAR, R)</option>
+            <option value="AED">UAE Dirham (AED)</option>
+            <option value="SAR">Saudi Riyal (SAR)</option>
+            <option value="ILS">Israeli Shekel (ILS, &#8362;)</option>
+          </optgroup>
+          <optgroup label="APAC">
+            <option value="JPY">Japanese Yen (JPY, &yen;)</option>
+            <option value="AUD">Australian Dollar (AUD, A$)</option>
+            <option value="NZD">New Zealand Dollar (NZD, NZ$)</option>
+            <option value="CNY">Chinese Yuan (CNY, CN&yen;)</option>
+            <option value="HKD">Hong Kong Dollar (HKD, HK$)</option>
+            <option value="SGD">Singapore Dollar (SGD, S$)</option>
+            <option value="KRW">South Korean Won (KRW, &#8361;)</option>
+            <option value="THB">Thai Baht (THB, &#3647;)</option>
+            <option value="VND">Vietnamese Dong (VND, &#8363;)</option>
+            <option value="PHP">Philippine Peso (PHP, &#8369;)</option>
+            <option value="IDR">Indonesian Rupiah (IDR, Rp)</option>
+            <option value="MYR">Malaysian Ringgit (MYR, RM)</option>
+            <option value="INR">Indian Rupee (INR, &#8377;)</option>
+            <option value="TWD">Taiwan Dollar (TWD, NT$)</option>
+            <option value="PKR">Pakistani Rupee (PKR, Rs)</option>
+            <option value="BDT">Bangladeshi Taka (BDT, &#2547;)</option>
+            <option value="LKR">Sri Lankan Rupee (LKR, Rs)</option>
+          </optgroup>
+        </select>
+        <p
+          class="currency-status"
+          id="currency-status"
+          role="status"
+          aria-live="polite"
+        ></p>
+      </section>
       <section class="custom-logo" aria-label="Custom logo">
         <label class="custom-logo-label" for="custom-logo-input">Custom logo</label>
         <div class="custom-logo-controls">
@@ -110,3 +167,4 @@
     <script src="popup.js"></script>
   </body>
 </html>
+
