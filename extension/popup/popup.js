@@ -1,6 +1,7 @@
 const logoToggle = document.getElementById("logo-toggle");
 const faviconToggle = document.getElementById("favicon-toggle");
 const textToggle = document.getElementById("text-toggle");
+const replaceAllToggle = document.getElementById("replace-all-toggle");
 const statusElement = document.getElementById("status");
 const retailerTabAutoButton = document.getElementById("retailer-tab-auto");
 const retailerAutoStatus = document.getElementById("retailer-auto-status");
@@ -145,6 +146,23 @@ const state = {
   currencyRates: { USD: 1 },
   currencyRatesUpdatedAt: 0
 };
+
+function getReplaceAllToggleState(currentState) {
+  const toggleStates = [
+    Boolean(currentState.logoEnabled),
+    Boolean(currentState.faviconEnabled),
+    Boolean(currentState.textEnabled),
+    Boolean(currentState.brandColorsEnabled)
+  ];
+
+  const allEnabled = toggleStates.every((enabled) => enabled);
+  const anyEnabled = toggleStates.some((enabled) => enabled);
+
+  return {
+    allEnabled,
+    anyEnabled
+  };
+}
 
 function getStatusMessage(currentState) {
   const retailerName = normalizeRetailerName(currentState.retailerName);
@@ -1390,6 +1408,16 @@ function applyState(newState) {
   logoToggle.checked = state.logoEnabled;
   faviconToggle.checked = state.faviconEnabled;
   textToggle.checked = state.textEnabled;
+  if (replaceAllToggle) {
+    const replaceAllState = getReplaceAllToggleState(state);
+    replaceAllToggle.checked = replaceAllState.allEnabled;
+    replaceAllToggle.indeterminate =
+      replaceAllState.anyEnabled && !replaceAllState.allEnabled;
+    replaceAllToggle.setAttribute(
+      "aria-checked",
+      replaceAllToggle.indeterminate ? "mixed" : String(replaceAllToggle.checked)
+    );
+  }
 
   if (document.activeElement !== retailerNameInput) {
     retailerNameInput.value = state.retailerName;
@@ -3682,6 +3710,23 @@ logoToggle.addEventListener("change", () => {
   applyState(newState);
   persistState(newState);
 });
+
+if (replaceAllToggle) {
+  replaceAllToggle.addEventListener("change", () => {
+    const replaceEnabled = replaceAllToggle.checked;
+    const newState = {
+      ...state,
+      logoEnabled: replaceEnabled,
+      faviconEnabled: replaceEnabled,
+      textEnabled: replaceEnabled,
+      brandColorsEnabled: replaceEnabled
+    };
+
+    applyState(newState);
+    persistState(newState);
+    persistBrandColors(newState);
+  });
+}
 
 faviconToggle.addEventListener("change", () => {
   const newState = {

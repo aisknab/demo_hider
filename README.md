@@ -16,6 +16,7 @@ Changes are client-side only and do not modify backend data.
 
 ## Features
 
+- `Replace all` toggle for turning all replace toggles on or off together.
 - `Replace logo` toggle.
 - `Replace account name` toggle.
 - `Replace favicon` toggle (when logo replacement is enabled).
@@ -60,7 +61,7 @@ Changes are client-side only and do not modify backend data.
 ## Usage
 
 1. Open the extension popup.
-2. Enable any branding toggles you want.
+2. Use `Replace all` to quickly turn all replace toggles on/off, or enable them individually.
 3. Optionally set a retailer name, upload custom logo/favicon assets, and edit brand colors.
 4. To auto-grab assets and colors, open a retailer site tab and click `Auto grab from active tab`.
 5. Enable `Brand colors -> Replace` to apply the grabbed/manual color theme on Criteo pages.

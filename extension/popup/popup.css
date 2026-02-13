@@ -480,6 +480,12 @@ main {
   font-weight: 600;
 }
 
+.replace-all {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .toggle {
   display: flex;
   align-items: center;
@@ -553,6 +559,18 @@ main {
 
 .toggle input:checked + .slider::after {
   transform: translateX(22px);
+}
+
+.toggle input:indeterminate + .slider {
+  background: #9e7b22;
+}
+
+.toggle input:indeterminate + .slider::after {
+  transform: translateX(11px);
+}
+
+.toggle.toggle-inline input:indeterminate + .slider::after {
+  transform: translateX(9px);
 }
 
 .status {
