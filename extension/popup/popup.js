@@ -17,6 +17,22 @@ const customFaviconPreviewImage = document.getElementById("custom-favicon-previe
 const customFaviconStatus = document.getElementById("custom-favicon-status");
 const currencySelect = document.getElementById("currency-select");
 const currencyStatus = document.getElementById("currency-status");
+const brandColorsToggle = document.getElementById("brand-colors-toggle");
+const primaryColorInput = document.getElementById("primary-color-input");
+const secondaryColorInput = document.getElementById("secondary-color-input");
+const primaryTextColorInput = document.getElementById("primary-text-color-input");
+const secondaryTextColorInput = document.getElementById(
+  "secondary-text-color-input"
+);
+const primaryColorSwatch = document.getElementById("primary-color-swatch");
+const secondaryColorSwatch = document.getElementById("secondary-color-swatch");
+const primaryTextColorSwatch = document.getElementById(
+  "primary-text-color-swatch"
+);
+const secondaryTextColorSwatch = document.getElementById(
+  "secondary-text-color-swatch"
+);
+const brandColorsStatus = document.getElementById("brand-colors-status");
 const extensionUpdateCurrent = document.getElementById("extension-update-current");
 const extensionUpdateStatus = document.getElementById("extension-update-status");
 const extensionUpdateLink = document.getElementById("extension-update-link");
@@ -25,8 +41,19 @@ const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
 const CUSTOM_LOGO_INVERT_STORAGE_KEY = "customLogoInvert";
 const CUSTOM_FAVICON_STORAGE_KEY = "customFaviconDataUrl";
 const RETAILER_NAME_STORAGE_KEY = "retailerName";
+const BRAND_COLORS_ENABLED_STORAGE_KEY = "brandColorsEnabled";
+const LEGACY_BRAND_COLORS_AUTO_ENABLED_STORAGE_KEY = "brandColorsAutoEnabled";
+const PRIMARY_COLOR_STORAGE_KEY = "primaryColor";
+const SECONDARY_COLOR_STORAGE_KEY = "secondaryColor";
+const PRIMARY_TEXT_COLOR_STORAGE_KEY = "primaryTextColor";
+const SECONDARY_TEXT_COLOR_STORAGE_KEY = "secondaryTextColor";
 const DEFAULT_RETAILER_NAME = "demo retailer";
 const DEFAULT_FAVICON_ENABLED = false;
+const DEFAULT_BRAND_COLORS_ENABLED = false;
+const DEFAULT_PRIMARY_COLOR = "#ff6c00";
+const DEFAULT_SECONDARY_COLOR = "#0f9d58";
+const DEFAULT_PRIMARY_TEXT_COLOR = "#ffffff";
+const DEFAULT_SECONDARY_TEXT_COLOR = "#ffffff";
 const MAX_CUSTOM_LOGO_BYTES = 1024 * 1024 * 2;
 const MAX_CUSTOM_FAVICON_BYTES = 1024 * 512;
 const LOGO_INVERT_SAMPLE_SIZE = 64;
@@ -36,6 +63,11 @@ const LOGO_INVERT_ALPHA_THRESHOLD = 16;
 const LOGO_INVERT_RATIO = 0.9;
 const LOGO_INVERT_MAX_DARK_RATIO = 0.02;
 const LOGO_INVERT_MIN_OPAQUE_PIXELS = 20;
+const BRAND_COLOR_SAMPLE_SIZE = 72;
+const BRAND_COLOR_ALPHA_THRESHOLD = 36;
+const BRAND_COLOR_QUANTIZATION_STEP = 24;
+const BRAND_COLOR_MIN_DISTANCE = 44;
+const BRAND_COLOR_SECONDARY_DISTANCE = 72;
 const SELECTED_CURRENCY_STORAGE_KEY = "selectedCurrency";
 const CURRENCY_RATES_STORAGE_KEY = "currencyRates";
 const CURRENCY_RATES_UPDATED_AT_STORAGE_KEY = "currencyRatesUpdatedAt";
@@ -104,6 +136,11 @@ const state = {
   customLogoInvert: false,
   customFaviconDataUrl: null,
   retailerName: DEFAULT_RETAILER_NAME,
+  brandColorsEnabled: DEFAULT_BRAND_COLORS_ENABLED,
+  primaryColor: DEFAULT_PRIMARY_COLOR,
+  secondaryColor: DEFAULT_SECONDARY_COLOR,
+  primaryTextColor: DEFAULT_PRIMARY_TEXT_COLOR,
+  secondaryTextColor: DEFAULT_SECONDARY_TEXT_COLOR,
   selectedCurrency: DEFAULT_SELECTED_CURRENCY,
   currencyRates: { USD: 1 },
   currencyRatesUpdatedAt: 0
@@ -170,6 +207,520 @@ function normalizeCustomLogoInvert(value, dataUrl) {
   }
 
   return Boolean(value);
+}
+
+function normalizeHexColor(value, fallback) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  let normalized = value.trim();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (!normalized.startsWith("#")) {
+    normalized = `#${normalized}`;
+  }
+
+  const shortMatch = normalized.match(/^#([0-9a-fA-F]{3})$/);
+  if (shortMatch) {
+    const [red, green, blue] = shortMatch[1].split("");
+    return `#${red}${red}${green}${green}${blue}${blue}`.toLowerCase();
+  }
+
+  const longMatch = normalized.match(/^#([0-9a-fA-F]{6})$/);
+  if (!longMatch) {
+    return fallback;
+  }
+
+  return `#${longMatch[1]}`.toLowerCase();
+}
+
+function clampColorChannel(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function rgbToHex(red, green, blue) {
+  const toToken = (value) => clampColorChannel(value).toString(16).padStart(2, "0");
+  return `#${toToken(red)}${toToken(green)}${toToken(blue)}`;
+}
+
+function parseRgbColor(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const match = value.trim().match(/^rgba?\((.+)\)$/i);
+  if (!match) {
+    return null;
+  }
+
+  const channels = match[1]
+    .replace(/\//g, " ")
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map((token) => Number.parseFloat(token));
+
+  if (
+    channels.length < 3 ||
+    !Number.isFinite(channels[0]) ||
+    !Number.isFinite(channels[1]) ||
+    !Number.isFinite(channels[2])
+  ) {
+    return null;
+  }
+
+  if (
+    channels.length >= 4 &&
+    Number.isFinite(channels[3]) &&
+    channels[3] <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    red: channels[0],
+    green: channels[1],
+    blue: channels[2]
+  };
+}
+
+function normalizeCssColorToHex(value) {
+  const normalizedHex = normalizeHexColor(value, "");
+  if (normalizedHex) {
+    return normalizedHex;
+  }
+
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return "";
+  }
+
+  context.fillStyle = "#010203";
+  context.fillStyle = trimmed;
+  const firstPass = context.fillStyle;
+  context.fillStyle = "#fdfcfb";
+  context.fillStyle = trimmed;
+  const secondPass = context.fillStyle;
+
+  if (firstPass === "#010203" && secondPass === "#fdfcfb") {
+    return "";
+  }
+
+  const parsedFromCanvasHex = normalizeHexColor(secondPass, "");
+  if (parsedFromCanvasHex) {
+    return parsedFromCanvasHex;
+  }
+
+  const parsedFromCanvasRgb = parseRgbColor(secondPass);
+  if (parsedFromCanvasRgb) {
+    return rgbToHex(
+      parsedFromCanvasRgb.red,
+      parsedFromCanvasRgb.green,
+      parsedFromCanvasRgb.blue
+    );
+  }
+
+  return "";
+}
+
+function hexToRgb(value) {
+  const normalized = normalizeHexColor(value, "");
+  if (!normalized) {
+    return null;
+  }
+
+  return {
+    red: Number.parseInt(normalized.slice(1, 3), 16),
+    green: Number.parseInt(normalized.slice(3, 5), 16),
+    blue: Number.parseInt(normalized.slice(5, 7), 16)
+  };
+}
+
+function getColorSaturation(rgb) {
+  if (!rgb) {
+    return 0;
+  }
+
+  const red = rgb.red / 255;
+  const green = rgb.green / 255;
+  const blue = rgb.blue / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+
+  if (max === 0) {
+    return 0;
+  }
+
+  return (max - min) / max;
+}
+
+function getRelativeLuminance(hexColor) {
+  const rgb = hexToRgb(hexColor);
+  if (!rgb) {
+    return 0;
+  }
+
+  function toLinear(channel) {
+    const value = channel / 255;
+    if (value <= 0.03928) {
+      return value / 12.92;
+    }
+    return ((value + 0.055) / 1.055) ** 2.4;
+  }
+
+  const red = toLinear(rgb.red);
+  const green = toLinear(rgb.green);
+  const blue = toLinear(rgb.blue);
+
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function getColorDistance(firstHexColor, secondHexColor) {
+  const first = hexToRgb(firstHexColor);
+  const second = hexToRgb(secondHexColor);
+
+  if (!first || !second) {
+    return 0;
+  }
+
+  const redDelta = first.red - second.red;
+  const greenDelta = first.green - second.green;
+  const blueDelta = first.blue - second.blue;
+
+  return Math.sqrt(redDelta ** 2 + greenDelta ** 2 + blueDelta ** 2);
+}
+
+function getContrastRatio(firstHexColor, secondHexColor) {
+  const firstLuminance = getRelativeLuminance(firstHexColor);
+  const secondLuminance = getRelativeLuminance(secondHexColor);
+
+  const lighter = Math.max(firstLuminance, secondLuminance);
+  const darker = Math.min(firstLuminance, secondLuminance);
+
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function normalizeColorList(values) {
+  const normalized = [];
+  const seen = new Set();
+
+  values.forEach((value) => {
+    const color = normalizeCssColorToHex(value);
+    if (!color || seen.has(color)) {
+      return;
+    }
+
+    seen.add(color);
+    normalized.push(color);
+  });
+
+  return normalized;
+}
+
+function isUsableBrandColor(color) {
+  const rgb = hexToRgb(color);
+  if (!rgb) {
+    return false;
+  }
+
+  const luminance = getRelativeLuminance(color);
+  const saturation = getColorSaturation(rgb);
+
+  if (luminance <= 0.03 || luminance >= 0.97) {
+    return false;
+  }
+
+  if (saturation < 0.08 && luminance > 0.85) {
+    return false;
+  }
+
+  return true;
+}
+
+function pickFirstPreferredBrandColor(candidates, fallback) {
+  const normalizedCandidates = normalizeColorList(candidates);
+  const preferredColor = normalizedCandidates.find((color) =>
+    isUsableBrandColor(color)
+  );
+
+  if (preferredColor) {
+    return preferredColor;
+  }
+
+  if (normalizedCandidates.length > 0) {
+    return normalizedCandidates[0];
+  }
+
+  return normalizeHexColor(fallback, DEFAULT_PRIMARY_COLOR);
+}
+
+function adjustColorBrightness(hexColor, amount) {
+  const rgb = hexToRgb(hexColor);
+  if (!rgb) {
+    return hexColor;
+  }
+
+  const normalizedAmount = Math.max(-1, Math.min(1, Number(amount) || 0));
+  const adjustChannel = (channel) => {
+    if (normalizedAmount >= 0) {
+      return channel + (255 - channel) * normalizedAmount;
+    }
+
+    return channel * (1 + normalizedAmount);
+  };
+
+  return rgbToHex(
+    adjustChannel(rgb.red),
+    adjustChannel(rgb.green),
+    adjustChannel(rgb.blue)
+  );
+}
+
+function pickSecondaryBrandColor(primaryColor, candidates, fallback) {
+  const normalizedPrimary = normalizeHexColor(primaryColor, DEFAULT_PRIMARY_COLOR);
+  const normalizedCandidates = normalizeColorList(candidates);
+
+  const distinctCandidate = normalizedCandidates.find((color) => {
+    if (color === normalizedPrimary) {
+      return false;
+    }
+
+    return getColorDistance(color, normalizedPrimary) >= BRAND_COLOR_SECONDARY_DISTANCE;
+  });
+
+  if (distinctCandidate) {
+    return distinctCandidate;
+  }
+
+  const luminance = getRelativeLuminance(normalizedPrimary);
+  const derived = adjustColorBrightness(
+    normalizedPrimary,
+    luminance >= 0.45 ? -0.35 : 0.35
+  );
+
+  if (getColorDistance(derived, normalizedPrimary) >= BRAND_COLOR_MIN_DISTANCE) {
+    return derived;
+  }
+
+  return normalizeHexColor(fallback, DEFAULT_SECONDARY_COLOR);
+}
+
+function selectTextColorForBackground(backgroundColor, candidateColors = []) {
+  const normalizedBackground = normalizeHexColor(backgroundColor, DEFAULT_PRIMARY_COLOR);
+  const candidates = normalizeColorList([
+    ...candidateColors,
+    "#ffffff",
+    "#000000"
+  ]);
+
+  if (candidates.length === 0) {
+    return DEFAULT_PRIMARY_TEXT_COLOR;
+  }
+
+  let selected = candidates[0];
+  let bestContrast = getContrastRatio(normalizedBackground, selected);
+
+  candidates.slice(1).forEach((candidate) => {
+    const contrast = getContrastRatio(normalizedBackground, candidate);
+    if (contrast > bestContrast) {
+      bestContrast = contrast;
+      selected = candidate;
+    }
+  });
+
+  return selected;
+}
+
+async function extractDominantColorsFromDataUrl(dataUrl, maxResults = 5) {
+  if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
+    return [];
+  }
+
+  let image;
+
+  try {
+    image = await loadImageFromDataUrl(dataUrl);
+  } catch (error) {
+    return [];
+  }
+
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+
+  if (!width || !height) {
+    return [];
+  }
+
+  const sampleScale = Math.min(
+    BRAND_COLOR_SAMPLE_SIZE / width,
+    BRAND_COLOR_SAMPLE_SIZE / height,
+    1
+  );
+  const sampleWidth = Math.max(1, Math.round(width * sampleScale));
+  const sampleHeight = Math.max(1, Math.round(height * sampleScale));
+  const canvas = document.createElement("canvas");
+  canvas.width = sampleWidth;
+  canvas.height = sampleHeight;
+
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return [];
+  }
+
+  context.clearRect(0, 0, sampleWidth, sampleHeight);
+  context.drawImage(image, 0, 0, sampleWidth, sampleHeight);
+
+  let imageData;
+
+  try {
+    imageData = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+  } catch (error) {
+    return [];
+  }
+
+  const buckets = new Map();
+
+  for (let index = 0; index < imageData.length; index += 4) {
+    const alpha = imageData[index + 3];
+    if (alpha < BRAND_COLOR_ALPHA_THRESHOLD) {
+      continue;
+    }
+
+    const red = imageData[index];
+    const green = imageData[index + 1];
+    const blue = imageData[index + 2];
+    const quantizedRed = Math.round(red / BRAND_COLOR_QUANTIZATION_STEP);
+    const quantizedGreen = Math.round(green / BRAND_COLOR_QUANTIZATION_STEP);
+    const quantizedBlue = Math.round(blue / BRAND_COLOR_QUANTIZATION_STEP);
+    const key = `${quantizedRed}|${quantizedGreen}|${quantizedBlue}`;
+    const existing = buckets.get(key);
+
+    if (existing) {
+      existing.red += red;
+      existing.green += green;
+      existing.blue += blue;
+      existing.count += 1;
+      continue;
+    }
+
+    buckets.set(key, {
+      red,
+      green,
+      blue,
+      count: 1
+    });
+  }
+
+  const ranked = Array.from(buckets.values())
+    .map((bucket) => {
+      const red = bucket.red / bucket.count;
+      const green = bucket.green / bucket.count;
+      const blue = bucket.blue / bucket.count;
+      const color = rgbToHex(red, green, blue);
+      const saturation = getColorSaturation(hexToRgb(color));
+      const luminance = getRelativeLuminance(color);
+      let score = bucket.count * (1 + saturation * 2);
+
+      if (luminance <= 0.06 || luminance >= 0.94) {
+        score *= 0.45;
+      }
+
+      if (saturation <= 0.05) {
+        score *= 0.6;
+      }
+
+      return {
+        color,
+        score
+      };
+    })
+    .sort((left, right) => right.score - left.score);
+
+  const colors = [];
+
+  ranked.forEach((entry) => {
+    if (colors.length >= maxResults) {
+      return;
+    }
+
+    const isDistinct = colors.every((existingColor) => {
+      return getColorDistance(existingColor, entry.color) >= BRAND_COLOR_MIN_DISTANCE;
+    });
+
+    if (isDistinct) {
+      colors.push(entry.color);
+    }
+  });
+
+  return colors;
+}
+
+async function detectAutoBrandColors({
+  logoDataUrl,
+  faviconDataUrl,
+  themeColor,
+  pageTextColor,
+  pageLinkColor,
+  pageBackgroundColor
+}) {
+  const [logoPalette, faviconPalette] = await Promise.all([
+    extractDominantColorsFromDataUrl(logoDataUrl, 6),
+    extractDominantColorsFromDataUrl(faviconDataUrl, 6)
+  ]);
+
+  const siteCandidates = normalizeColorList([
+    themeColor,
+    pageLinkColor,
+    pageTextColor,
+    pageBackgroundColor
+  ]);
+
+  const hasSourceColors =
+    logoPalette.length > 0 || faviconPalette.length > 0 || siteCandidates.length > 0;
+
+  if (!hasSourceColors) {
+    return null;
+  }
+
+  const primaryColor = pickFirstPreferredBrandColor(
+    [...logoPalette, ...siteCandidates, ...faviconPalette],
+    state.primaryColor
+  );
+  const secondaryColor = pickSecondaryBrandColor(
+    primaryColor,
+    [...faviconPalette, ...siteCandidates, ...logoPalette],
+    state.secondaryColor
+  );
+
+  return {
+    primaryColor,
+    secondaryColor,
+    primaryTextColor: selectTextColorForBackground(primaryColor, [
+      pageTextColor,
+      state.primaryTextColor
+    ]),
+    secondaryTextColor: selectTextColorForBackground(secondaryColor, [
+      pageTextColor,
+      state.secondaryTextColor
+    ])
+  };
 }
 
 function normalizeCurrencyCode(value) {
@@ -317,6 +868,66 @@ function updateCurrencyUi() {
 
   const updatedAt = formatCurrencyTimestamp(state.currencyRatesUpdatedAt);
   setCurrencyStatus(`USD -> ${selectedCurrency}: ${rate.toFixed(4)} (updated ${updatedAt})`);
+}
+
+function setBrandColorsStatus(message, isError = false) {
+  if (!brandColorsStatus) {
+    return;
+  }
+
+  brandColorsStatus.textContent = message;
+
+  if (isError) {
+    brandColorsStatus.setAttribute("data-error", "true");
+  } else {
+    brandColorsStatus.removeAttribute("data-error");
+  }
+}
+
+function updateBrandColorSwatch(swatchElement, color) {
+  if (!swatchElement) {
+    return;
+  }
+
+  const normalizedColor = normalizeHexColor(color, "#000000");
+  swatchElement.style.backgroundColor = normalizedColor;
+  swatchElement.setAttribute("title", normalizedColor);
+}
+
+function updateBrandColorsUi() {
+  if (!brandColorsToggle) {
+    return;
+  }
+
+  if (document.activeElement !== primaryColorInput) {
+    primaryColorInput.value = state.primaryColor;
+  }
+
+  if (document.activeElement !== secondaryColorInput) {
+    secondaryColorInput.value = state.secondaryColor;
+  }
+
+  if (document.activeElement !== primaryTextColorInput) {
+    primaryTextColorInput.value = state.primaryTextColor;
+  }
+
+  if (document.activeElement !== secondaryTextColorInput) {
+    secondaryTextColorInput.value = state.secondaryTextColor;
+  }
+
+  updateBrandColorSwatch(primaryColorSwatch, state.primaryColor);
+  updateBrandColorSwatch(secondaryColorSwatch, state.secondaryColor);
+  updateBrandColorSwatch(primaryTextColorSwatch, state.primaryTextColor);
+  updateBrandColorSwatch(secondaryTextColorSwatch, state.secondaryTextColor);
+
+  brandColorsToggle.checked = state.brandColorsEnabled;
+
+  if (state.brandColorsEnabled) {
+    setBrandColorsStatus("Replace is on. Auto grab branding still refreshes colors.");
+    return;
+  }
+
+  setBrandColorsStatus("Replace is off. Auto grab branding still refreshes colors.");
 }
 
 function setCustomLogoStatus(message, isError = false) {
@@ -753,6 +1364,23 @@ function applyState(newState) {
     newState.customFaviconDataUrl
   );
   state.retailerName = normalizeRetailerName(newState.retailerName);
+  state.brandColorsEnabled = Boolean(newState.brandColorsEnabled);
+  state.primaryColor = normalizeHexColor(
+    newState.primaryColor,
+    DEFAULT_PRIMARY_COLOR
+  );
+  state.secondaryColor = normalizeHexColor(
+    newState.secondaryColor,
+    DEFAULT_SECONDARY_COLOR
+  );
+  state.primaryTextColor = normalizeHexColor(
+    newState.primaryTextColor,
+    DEFAULT_PRIMARY_TEXT_COLOR
+  );
+  state.secondaryTextColor = normalizeHexColor(
+    newState.secondaryTextColor,
+    DEFAULT_SECONDARY_TEXT_COLOR
+  );
   state.selectedCurrency = normalizeCurrencyCode(newState.selectedCurrency);
   state.currencyRates = normalizeCurrencyRates(newState.currencyRates);
   state.currencyRatesUpdatedAt = normalizeCurrencyRatesUpdatedAt(
@@ -770,6 +1398,7 @@ function applyState(newState) {
   statusElement.textContent = getStatusMessage(state);
   updateCustomLogoUi();
   updateCustomFaviconUi();
+  updateBrandColorsUi();
   updateCurrencyUi();
 }
 
@@ -782,6 +1411,11 @@ function buildUpdatedState(partial) {
     customLogoInvert: state.customLogoInvert,
     customFaviconDataUrl: state.customFaviconDataUrl,
     retailerName: state.retailerName,
+    brandColorsEnabled: state.brandColorsEnabled,
+    primaryColor: state.primaryColor,
+    secondaryColor: state.secondaryColor,
+    primaryTextColor: state.primaryTextColor,
+    secondaryTextColor: state.secondaryTextColor,
     selectedCurrency: state.selectedCurrency,
     currencyRates: state.currencyRates,
     currencyRatesUpdatedAt: state.currencyRatesUpdatedAt
@@ -805,6 +1439,30 @@ function buildUpdatedState(partial) {
   const hasRetailerName = Object.prototype.hasOwnProperty.call(
     partial,
     RETAILER_NAME_STORAGE_KEY
+  );
+  const hasBrandColorsEnabled = Object.prototype.hasOwnProperty.call(
+    partial,
+    BRAND_COLORS_ENABLED_STORAGE_KEY
+  );
+  const hasLegacyBrandColorsAutoEnabled = Object.prototype.hasOwnProperty.call(
+    partial,
+    LEGACY_BRAND_COLORS_AUTO_ENABLED_STORAGE_KEY
+  );
+  const hasPrimaryColor = Object.prototype.hasOwnProperty.call(
+    partial,
+    PRIMARY_COLOR_STORAGE_KEY
+  );
+  const hasSecondaryColor = Object.prototype.hasOwnProperty.call(
+    partial,
+    SECONDARY_COLOR_STORAGE_KEY
+  );
+  const hasPrimaryTextColor = Object.prototype.hasOwnProperty.call(
+    partial,
+    PRIMARY_TEXT_COLOR_STORAGE_KEY
+  );
+  const hasSecondaryTextColor = Object.prototype.hasOwnProperty.call(
+    partial,
+    SECONDARY_TEXT_COLOR_STORAGE_KEY
   );
   const hasSelectedCurrency = Object.prototype.hasOwnProperty.call(
     partial,
@@ -847,6 +1505,28 @@ function buildUpdatedState(partial) {
     newState.retailerName = partial.retailerName;
   }
 
+  if (hasBrandColorsEnabled) {
+    newState.brandColorsEnabled = Boolean(partial.brandColorsEnabled);
+  } else if (hasLegacyBrandColorsAutoEnabled) {
+    newState.brandColorsEnabled = Boolean(partial.brandColorsAutoEnabled);
+  }
+
+  if (hasPrimaryColor) {
+    newState.primaryColor = partial.primaryColor;
+  }
+
+  if (hasSecondaryColor) {
+    newState.secondaryColor = partial.secondaryColor;
+  }
+
+  if (hasPrimaryTextColor) {
+    newState.primaryTextColor = partial.primaryTextColor;
+  }
+
+  if (hasSecondaryTextColor) {
+    newState.secondaryTextColor = partial.secondaryTextColor;
+  }
+
   if (hasSelectedCurrency) {
     newState.selectedCurrency = partial.selectedCurrency;
   }
@@ -887,6 +1567,12 @@ function syncStateWithStorage() {
       textEnabled: false,
       enabled: false,
       retailerName: DEFAULT_RETAILER_NAME,
+      brandColorsEnabled: DEFAULT_BRAND_COLORS_ENABLED,
+      brandColorsAutoEnabled: DEFAULT_BRAND_COLORS_ENABLED,
+      primaryColor: DEFAULT_PRIMARY_COLOR,
+      secondaryColor: DEFAULT_SECONDARY_COLOR,
+      primaryTextColor: DEFAULT_PRIMARY_TEXT_COLOR,
+      secondaryTextColor: DEFAULT_SECONDARY_TEXT_COLOR,
       selectedCurrency: DEFAULT_SELECTED_CURRENCY
     },
     (result) => {
@@ -985,6 +1671,54 @@ function persistRetailerName(name) {
         syncStateWithStorage();
       }
     }
+  );
+}
+
+function persistBrandColors(newState) {
+  chrome.storage.sync.set(
+    {
+      brandColorsEnabled: Boolean(newState.brandColorsEnabled),
+      primaryColor: normalizeHexColor(newState.primaryColor, DEFAULT_PRIMARY_COLOR),
+      secondaryColor: normalizeHexColor(
+        newState.secondaryColor,
+        DEFAULT_SECONDARY_COLOR
+      ),
+      primaryTextColor: normalizeHexColor(
+        newState.primaryTextColor,
+        DEFAULT_PRIMARY_TEXT_COLOR
+      ),
+      secondaryTextColor: normalizeHexColor(
+        newState.secondaryTextColor,
+        DEFAULT_SECONDARY_TEXT_COLOR
+      )
+    },
+    () => {
+      if (chrome.runtime.lastError) {
+        console.error("Unable to persist brand colors", chrome.runtime.lastError);
+        setBrandColorsStatus(
+          "Unable to save brand colors. Please try again.",
+          true
+        );
+        syncStateWithStorage();
+      }
+    }
+  );
+}
+
+function hasBrandColorSettingUpdates(partial) {
+  return (
+    Object.prototype.hasOwnProperty.call(
+      partial,
+      BRAND_COLORS_ENABLED_STORAGE_KEY
+    ) ||
+    Object.prototype.hasOwnProperty.call(
+      partial,
+      LEGACY_BRAND_COLORS_AUTO_ENABLED_STORAGE_KEY
+    ) ||
+    Object.prototype.hasOwnProperty.call(partial, PRIMARY_COLOR_STORAGE_KEY) ||
+    Object.prototype.hasOwnProperty.call(partial, SECONDARY_COLOR_STORAGE_KEY) ||
+    Object.prototype.hasOwnProperty.call(partial, PRIMARY_TEXT_COLOR_STORAGE_KEY) ||
+    Object.prototype.hasOwnProperty.call(partial, SECONDARY_TEXT_COLOR_STORAGE_KEY)
   );
 }
 
@@ -1714,7 +2448,16 @@ function describeImageFailure(label, error) {
   }
 }
 
-async function buildAutoFillUpdates({ extractedName, logoUrl, faviconUrl, logoMeta }) {
+async function buildAutoFillUpdates({
+  extractedName,
+  logoUrl,
+  faviconUrl,
+  logoMeta,
+  themeColor,
+  pageTextColor,
+  pageLinkColor,
+  pageBackgroundColor
+}) {
   const updates = {};
   const found = [];
   const issues = [];
@@ -1757,6 +2500,25 @@ async function buildAutoFillUpdates({ extractedName, logoUrl, faviconUrl, logoMe
     found.push("favicon");
   } else {
     issues.push(describeImageFailure("Favicon", faviconResult.error));
+  }
+
+  const detectedColors = await detectAutoBrandColors({
+    logoDataUrl: updates.customLogoDataUrl || state.customLogoDataUrl,
+    faviconDataUrl: updates.customFaviconDataUrl || state.customFaviconDataUrl,
+    themeColor,
+    pageTextColor,
+    pageLinkColor,
+    pageBackgroundColor
+  });
+
+  if (detectedColors) {
+    updates.primaryColor = detectedColors.primaryColor;
+    updates.secondaryColor = detectedColors.secondaryColor;
+    updates.primaryTextColor = detectedColors.primaryTextColor;
+    updates.secondaryTextColor = detectedColors.secondaryTextColor;
+    found.push("brand colors");
+  } else {
+    issues.push("No color candidates found for auto brand colors.");
   }
 
   return { updates, found, issues };
@@ -2701,11 +3463,27 @@ function collectBrandingFromActiveTab() {
     }
   }
 
+  const themeColor = getMetaContent([
+    'meta[name="theme-color" i]',
+    'meta[name="msapplication-TileColor" i]'
+  ]);
+  const pageStyles = document.body ? window.getComputedStyle(document.body) : null;
+  const pageTextColor = pageStyles ? pageStyles.color || "" : "";
+  const pageBackgroundColor = pageStyles ? pageStyles.backgroundColor || "" : "";
+  const firstLink = document.querySelector("a[href]");
+  const pageLinkColor = firstLink
+    ? window.getComputedStyle(firstLink).color || ""
+    : "";
+
   return {
     extractedName,
     logoUrl,
     logoMeta,
     faviconUrl,
+    themeColor,
+    pageTextColor,
+    pageLinkColor,
+    pageBackgroundColor,
     pageUrl
   };
 }
@@ -2803,11 +3581,16 @@ async function autoFillFromActiveTab() {
             extractedName: payload.extractedName,
             logoUrl: payload.logoUrl,
             faviconUrl: payload.faviconUrl,
-            logoMeta: payload.logoMeta
+            logoMeta: payload.logoMeta,
+            themeColor: payload.themeColor,
+            pageTextColor: payload.pageTextColor,
+            pageLinkColor: payload.pageLinkColor,
+            pageBackgroundColor: payload.pageBackgroundColor
           });
 
+          let updatedState = null;
           if (Object.keys(updates).length > 0) {
-            const updatedState = buildUpdatedState(updates);
+            updatedState = buildUpdatedState(updates);
             applyState(updatedState);
           }
 
@@ -2828,6 +3611,10 @@ async function autoFillFromActiveTab() {
             persistCustomFavicon(updates.customFaviconDataUrl);
           }
 
+          if (updatedState && hasBrandColorSettingUpdates(updates)) {
+            persistBrandColors(updatedState);
+          }
+
           if (found.length === 0) {
             setAutoGrabStatus("No branding assets found on the active tab.", true);
           } else {
@@ -2846,6 +3633,44 @@ async function autoFillFromActiveTab() {
       }
     );
   });
+}
+
+function updateBrandColorFromInput(inputElement, stateKey, label) {
+  if (!inputElement) {
+    return;
+  }
+
+  const normalizedColor = normalizeHexColor(inputElement.value, "");
+  if (!normalizedColor) {
+    inputElement.value = state[stateKey];
+    setBrandColorsStatus(
+      `Invalid ${label}. Use a hex color like #ff6c00.`,
+      true
+    );
+    return;
+  }
+
+  const newState = {
+    ...state,
+    [stateKey]: normalizedColor
+  };
+
+  applyState(newState);
+  persistBrandColors(newState);
+}
+
+function previewBrandColorInput(inputElement, swatchElement, stateKey) {
+  if (!inputElement || !swatchElement) {
+    return;
+  }
+
+  const previewColor = normalizeHexColor(inputElement.value, "");
+  if (!previewColor) {
+    updateBrandColorSwatch(swatchElement, state[stateKey]);
+    return;
+  }
+
+  updateBrandColorSwatch(swatchElement, previewColor);
 }
 
 logoToggle.addEventListener("change", () => {
@@ -2877,6 +3702,82 @@ textToggle.addEventListener("change", () => {
   applyState(newState);
   persistState(newState);
 });
+
+if (brandColorsToggle) {
+  brandColorsToggle.addEventListener("change", () => {
+    const newState = {
+      ...state,
+      brandColorsEnabled: brandColorsToggle.checked
+    };
+
+    applyState(newState);
+    persistBrandColors(newState);
+  });
+}
+
+if (primaryColorInput) {
+  primaryColorInput.addEventListener("input", () => {
+    previewBrandColorInput(primaryColorInput, primaryColorSwatch, "primaryColor");
+  });
+
+  primaryColorInput.addEventListener("change", () => {
+    updateBrandColorFromInput(primaryColorInput, "primaryColor", "primary color");
+  });
+}
+
+if (secondaryColorInput) {
+  secondaryColorInput.addEventListener("input", () => {
+    previewBrandColorInput(
+      secondaryColorInput,
+      secondaryColorSwatch,
+      "secondaryColor"
+    );
+  });
+
+  secondaryColorInput.addEventListener("change", () => {
+    updateBrandColorFromInput(
+      secondaryColorInput,
+      "secondaryColor",
+      "secondary color"
+    );
+  });
+}
+
+if (primaryTextColorInput) {
+  primaryTextColorInput.addEventListener("input", () => {
+    previewBrandColorInput(
+      primaryTextColorInput,
+      primaryTextColorSwatch,
+      "primaryTextColor"
+    );
+  });
+
+  primaryTextColorInput.addEventListener("change", () => {
+    updateBrandColorFromInput(
+      primaryTextColorInput,
+      "primaryTextColor",
+      "primary text color"
+    );
+  });
+}
+
+if (secondaryTextColorInput) {
+  secondaryTextColorInput.addEventListener("input", () => {
+    previewBrandColorInput(
+      secondaryTextColorInput,
+      secondaryTextColorSwatch,
+      "secondaryTextColor"
+    );
+  });
+
+  secondaryTextColorInput.addEventListener("change", () => {
+    updateBrandColorFromInput(
+      secondaryTextColorInput,
+      "secondaryTextColor",
+      "secondary text color"
+    );
+  });
+}
 
 retailerTabAutoButton.addEventListener("click", () => {
   autoFillFromActiveTab();
@@ -3042,6 +3943,58 @@ chrome.storage.onChanged.addListener((changes, area) => {
       hasUpdate = true;
     }
 
+    if (
+      Object.prototype.hasOwnProperty.call(
+        changes,
+        BRAND_COLORS_ENABLED_STORAGE_KEY
+      )
+    ) {
+      update.brandColorsEnabled =
+        changes[BRAND_COLORS_ENABLED_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        changes,
+        LEGACY_BRAND_COLORS_AUTO_ENABLED_STORAGE_KEY
+      )
+    ) {
+      update.brandColorsEnabled =
+        changes[LEGACY_BRAND_COLORS_AUTO_ENABLED_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, PRIMARY_COLOR_STORAGE_KEY)) {
+      update.primaryColor = changes[PRIMARY_COLOR_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(changes, SECONDARY_COLOR_STORAGE_KEY)
+    ) {
+      update.secondaryColor = changes[SECONDARY_COLOR_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(changes, PRIMARY_TEXT_COLOR_STORAGE_KEY)
+    ) {
+      update.primaryTextColor = changes[PRIMARY_TEXT_COLOR_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        changes,
+        SECONDARY_TEXT_COLOR_STORAGE_KEY
+      )
+    ) {
+      update.secondaryTextColor =
+        changes[SECONDARY_TEXT_COLOR_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
     if (Object.prototype.hasOwnProperty.call(changes, SELECTED_CURRENCY_STORAGE_KEY)) {
       update.selectedCurrency = changes[SELECTED_CURRENCY_STORAGE_KEY].newValue;
       hasUpdate = true;
@@ -3095,3 +4048,4 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 syncStateWithStorage();
 void checkForExtensionUpdates();
+

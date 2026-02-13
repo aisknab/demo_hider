@@ -30,10 +30,21 @@ const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
 const CUSTOM_LOGO_INVERT_STORAGE_KEY = "customLogoInvert";
 const CUSTOM_FAVICON_STORAGE_KEY = "customFaviconDataUrl";
 const RETAILER_NAME_STORAGE_KEY = "retailerName";
+const BRAND_COLORS_ENABLED_STORAGE_KEY = "brandColorsEnabled";
+const LEGACY_BRAND_COLORS_AUTO_ENABLED_STORAGE_KEY = "brandColorsAutoEnabled";
+const PRIMARY_COLOR_STORAGE_KEY = "primaryColor";
+const SECONDARY_COLOR_STORAGE_KEY = "secondaryColor";
+const PRIMARY_TEXT_COLOR_STORAGE_KEY = "primaryTextColor";
+const SECONDARY_TEXT_COLOR_STORAGE_KEY = "secondaryTextColor";
 const SELECTED_CURRENCY_STORAGE_KEY = "selectedCurrency";
 const CURRENCY_RATES_STORAGE_KEY = "currencyRates";
 const CURRENCY_RATES_UPDATED_AT_STORAGE_KEY = "currencyRatesUpdatedAt";
 const DEFAULT_SELECTED_CURRENCY = "USD";
+const DEFAULT_BRAND_COLORS_ENABLED = false;
+const DEFAULT_PRIMARY_COLOR = "#ff6c00";
+const DEFAULT_SECONDARY_COLOR = "#0f9d58";
+const DEFAULT_PRIMARY_TEXT_COLOR = "#ffffff";
+const DEFAULT_SECONDARY_TEXT_COLOR = "#ffffff";
 const CURRENCY_CODES = [
   "USD",
   "CAD",
@@ -95,6 +106,11 @@ const state = {
   customFaviconDataUrl: null,
   faviconEnabled: DEFAULT_FAVICON_ENABLED,
   retailerName: DEFAULT_RETAILER_NAME,
+  brandColorsEnabled: DEFAULT_BRAND_COLORS_ENABLED,
+  primaryColor: DEFAULT_PRIMARY_COLOR,
+  secondaryColor: DEFAULT_SECONDARY_COLOR,
+  primaryTextColor: DEFAULT_PRIMARY_TEXT_COLOR,
+  secondaryTextColor: DEFAULT_SECONDARY_TEXT_COLOR,
   selectedCurrency: DEFAULT_SELECTED_CURRENCY,
   currencyRates: { USD: 1 },
   currencyRatesUpdatedAt: 0
@@ -115,6 +131,10 @@ const currencyFormatterCache = new Map();
 const observedCurrencyShadowRoots = new WeakSet();
 const currencyShadowObservers = [];
 const retailerCellOriginalContent = new Map();
+const originalBrandColorVariables = new Map();
+let appliedBrandColorSignature = "";
+let primaryPaletteDirection = null;
+let secondaryPaletteDirection = null;
 const RETAILER_CELL_TEXT_PROPERTY_NAMES = [
   "text",
   "tooltip",
@@ -154,6 +174,39 @@ const RETAILER_CELL_TEXT_ATTRIBUTE_TOKENS = new Set([
   "description",
   "popover"
 ]);
+const BRAND_COLOR_PALETTE_FACTORS = [
+  0.88,
+  0.72,
+  0.56,
+  0.34,
+  0,
+  -0.12,
+  -0.24,
+  -0.36,
+  -0.48
+];
+const BRAND_COLOR_VARIABLE_NAMES = [
+  "--primary-sys-0",
+  "--primary-sys-1",
+  "--primary-sys-2",
+  "--primary-sys-3",
+  "--primary-sys-4",
+  "--primary-sys-5",
+  "--primary-sys-6",
+  "--primary-sys-7",
+  "--primary-sys-8",
+  "--primary-sys-9",
+  "--accent-sys-0",
+  "--accent-sys-1",
+  "--accent-sys-2",
+  "--accent-sys-3",
+  "--accent-sys-4",
+  "--accent-sys-5",
+  "--accent-sys-6",
+  "--accent-sys-7",
+  "--accent-sys-8",
+  "--accent-sys-9"
+];
 
 function normalizeRetailerName(value) {
   if (typeof value !== "string") {
@@ -228,6 +281,352 @@ function normalizeCustomLogoInvert(value, dataUrl) {
   }
 
   return Boolean(value);
+}
+
+function normalizeHexColor(value, fallback) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  let normalized = value.trim();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (!normalized.startsWith("#")) {
+    normalized = `#${normalized}`;
+  }
+
+  const shortMatch = normalized.match(/^#([0-9a-fA-F]{3})$/);
+  if (shortMatch) {
+    const [red, green, blue] = shortMatch[1].split("");
+    return `#${red}${red}${green}${green}${blue}${blue}`.toLowerCase();
+  }
+
+  const longMatch = normalized.match(/^#([0-9a-fA-F]{6})$/);
+  if (!longMatch) {
+    return fallback;
+  }
+
+  return `#${longMatch[1]}`.toLowerCase();
+}
+
+function clampColorChannel(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function rgbToHex(red, green, blue) {
+  const toToken = (value) => clampColorChannel(value).toString(16).padStart(2, "0");
+  return `#${toToken(red)}${toToken(green)}${toToken(blue)}`;
+}
+
+function hexToRgb(value) {
+  const normalized = normalizeHexColor(value, "");
+  if (!normalized) {
+    return null;
+  }
+
+  return {
+    red: Number.parseInt(normalized.slice(1, 3), 16),
+    green: Number.parseInt(normalized.slice(3, 5), 16),
+    blue: Number.parseInt(normalized.slice(5, 7), 16)
+  };
+}
+
+function parseRgbColor(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const match = value.trim().match(/^rgba?\((.+)\)$/i);
+  if (!match) {
+    return null;
+  }
+
+  const channels = match[1]
+    .replace(/\//g, " ")
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map((token) => Number.parseFloat(token));
+
+  if (
+    channels.length < 3 ||
+    !Number.isFinite(channels[0]) ||
+    !Number.isFinite(channels[1]) ||
+    !Number.isFinite(channels[2])
+  ) {
+    return null;
+  }
+
+  if (
+    channels.length >= 4 &&
+    Number.isFinite(channels[3]) &&
+    channels[3] <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    red: channels[0],
+    green: channels[1],
+    blue: channels[2]
+  };
+}
+
+function normalizeCssColorToHex(value) {
+  const normalizedHex = normalizeHexColor(value, "");
+  if (normalizedHex) {
+    return normalizedHex;
+  }
+
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return "";
+  }
+
+  context.fillStyle = "#010203";
+  context.fillStyle = trimmed;
+  const firstPass = context.fillStyle;
+  context.fillStyle = "#fdfcfb";
+  context.fillStyle = trimmed;
+  const secondPass = context.fillStyle;
+
+  if (firstPass === "#010203" && secondPass === "#fdfcfb") {
+    return "";
+  }
+
+  const parsedHex = normalizeHexColor(secondPass, "");
+  if (parsedHex) {
+    return parsedHex;
+  }
+
+  const parsedRgb = parseRgbColor(secondPass);
+  if (!parsedRgb) {
+    return "";
+  }
+
+  return rgbToHex(parsedRgb.red, parsedRgb.green, parsedRgb.blue);
+}
+
+function getPerceivedLuminance(hexColor) {
+  const rgb = hexToRgb(hexColor);
+  if (!rgb) {
+    return 0;
+  }
+
+  return (
+    (0.2126 * rgb.red + 0.7152 * rgb.green + 0.0722 * rgb.blue) / 255
+  );
+}
+
+function mixRgbColors(source, target, amount) {
+  const normalizedAmount = Math.max(0, Math.min(1, Number(amount) || 0));
+
+  return {
+    red: source.red + (target.red - source.red) * normalizedAmount,
+    green: source.green + (target.green - source.green) * normalizedAmount,
+    blue: source.blue + (target.blue - source.blue) * normalizedAmount
+  };
+}
+
+function adjustHexColorTone(hexColor, factor) {
+  const source = hexToRgb(hexColor);
+  if (!source) {
+    return hexColor;
+  }
+
+  const normalizedFactor = Math.max(-1, Math.min(1, Number(factor) || 0));
+  const target =
+    normalizedFactor >= 0
+      ? { red: 255, green: 255, blue: 255 }
+      : { red: 0, green: 0, blue: 0 };
+  const mixed = mixRgbColors(source, target, Math.abs(normalizedFactor));
+
+  return rgbToHex(mixed.red, mixed.green, mixed.blue);
+}
+
+function detectPaletteDirection(prefix) {
+  if (!document.documentElement) {
+    return "light-to-dark";
+  }
+
+  const computedStyles = window.getComputedStyle(document.documentElement);
+  const first = normalizeCssColorToHex(
+    computedStyles.getPropertyValue(`${prefix}1`)
+  );
+  const last = normalizeCssColorToHex(
+    computedStyles.getPropertyValue(`${prefix}9`)
+  );
+
+  if (!first || !last) {
+    return "light-to-dark";
+  }
+
+  return getPerceivedLuminance(first) >= getPerceivedLuminance(last)
+    ? "light-to-dark"
+    : "dark-to-light";
+}
+
+function buildPaletteFromBaseColor(baseColor, direction, fallbackColor) {
+  const normalizedBase = normalizeHexColor(baseColor, fallbackColor);
+  const palette = BRAND_COLOR_PALETTE_FACTORS.map((factor) => {
+    return adjustHexColorTone(normalizedBase, factor);
+  });
+
+  if (direction === "dark-to-light") {
+    return palette.slice().reverse();
+  }
+
+  return palette;
+}
+
+function buildBrandColorSignature() {
+  return [
+    state.brandColorsEnabled,
+    state.primaryColor,
+    state.secondaryColor,
+    state.primaryTextColor,
+    state.secondaryTextColor,
+    primaryPaletteDirection || "",
+    secondaryPaletteDirection || ""
+  ].join("|");
+}
+
+function captureOriginalBrandColorVariables() {
+  if (!document.documentElement || originalBrandColorVariables.size > 0) {
+    return;
+  }
+
+  const rootStyle = document.documentElement.style;
+
+  BRAND_COLOR_VARIABLE_NAMES.forEach((name) => {
+    originalBrandColorVariables.set(name, rootStyle.getPropertyValue(name));
+  });
+}
+
+function normalizeBrandVariableValue(value) {
+  const normalizedColor = normalizeCssColorToHex(value);
+  if (normalizedColor) {
+    return normalizedColor;
+  }
+
+  return (value || "").trim().toLowerCase();
+}
+
+function areBrandColorValuesApplied(assignments) {
+  if (!document.documentElement || !assignments || typeof assignments !== "object") {
+    return false;
+  }
+
+  const rootStyle = document.documentElement.style;
+
+  return Object.keys(assignments).every((name) => {
+    const expected = normalizeBrandVariableValue(assignments[name]);
+    const current = normalizeBrandVariableValue(rootStyle.getPropertyValue(name));
+    return current === expected;
+  });
+}
+
+function applyBrandColorCustomizations() {
+  if (!document.documentElement) {
+    return;
+  }
+
+  captureOriginalBrandColorVariables();
+
+  if (!primaryPaletteDirection) {
+    primaryPaletteDirection = detectPaletteDirection("--primary-sys-");
+  }
+
+  if (!secondaryPaletteDirection) {
+    secondaryPaletteDirection = detectPaletteDirection("--accent-sys-");
+  }
+
+  const nextSignature = buildBrandColorSignature();
+
+  const primaryPalette = buildPaletteFromBaseColor(
+    state.primaryColor,
+    primaryPaletteDirection,
+    DEFAULT_PRIMARY_COLOR
+  );
+  const secondaryPalette = buildPaletteFromBaseColor(
+    state.secondaryColor,
+    secondaryPaletteDirection,
+    DEFAULT_SECONDARY_COLOR
+  );
+  const assignments = {
+    "--primary-sys-0": normalizeHexColor(
+      state.primaryTextColor,
+      DEFAULT_PRIMARY_TEXT_COLOR
+    ),
+    "--accent-sys-0": normalizeHexColor(
+      state.secondaryTextColor,
+      DEFAULT_SECONDARY_TEXT_COLOR
+    )
+  };
+
+  for (let index = 1; index <= 9; index += 1) {
+    assignments[`--primary-sys-${index}`] = primaryPalette[index - 1];
+    assignments[`--accent-sys-${index}`] = secondaryPalette[index - 1];
+  }
+
+  const rootStyle = document.documentElement.style;
+
+  if (
+    nextSignature === appliedBrandColorSignature &&
+    areBrandColorValuesApplied(assignments)
+  ) {
+    return;
+  }
+
+  Object.keys(assignments).forEach((name) => {
+    rootStyle.setProperty(name, assignments[name]);
+  });
+
+  appliedBrandColorSignature = nextSignature;
+}
+
+function restoreBrandColorCustomizations() {
+  if (!document.documentElement) {
+    return;
+  }
+
+  if (originalBrandColorVariables.size === 0) {
+    appliedBrandColorSignature = "";
+    primaryPaletteDirection = null;
+    secondaryPaletteDirection = null;
+    return;
+  }
+
+  const rootStyle = document.documentElement.style;
+
+  originalBrandColorVariables.forEach((value, name) => {
+    if (typeof value === "string" && value.trim()) {
+      rootStyle.setProperty(name, value);
+    } else {
+      rootStyle.removeProperty(name);
+    }
+  });
+
+  originalBrandColorVariables.clear();
+  appliedBrandColorSignature = "";
+  primaryPaletteDirection = null;
+  secondaryPaletteDirection = null;
 }
 
 function normalizeCurrencyCode(value) {
@@ -1627,6 +2026,12 @@ function updateCustomizations() {
     restoreAccountNameCustomizations();
   }
 
+  if (state.brandColorsEnabled) {
+    applyBrandColorCustomizations();
+  } else {
+    restoreBrandColorCustomizations();
+  }
+
   applyCurrencyCustomizations();
 }
 
@@ -1646,6 +2051,10 @@ function ensureObserver() {
 
     if (state.textEnabled) {
       applyAccountNameCustomizations();
+    }
+
+    if (state.brandColorsEnabled) {
+      applyBrandColorCustomizations();
     }
 
     applyCurrencyCustomizations();
@@ -1671,6 +2080,22 @@ function applyState(newState, forceUpdate = false) {
   const normalizedCurrencyRatesUpdatedAt = normalizeCurrencyRatesUpdatedAt(
     newState.currencyRatesUpdatedAt
   );
+  const normalizedPrimaryColor = normalizeHexColor(
+    newState.primaryColor,
+    DEFAULT_PRIMARY_COLOR
+  );
+  const normalizedSecondaryColor = normalizeHexColor(
+    newState.secondaryColor,
+    DEFAULT_SECONDARY_COLOR
+  );
+  const normalizedPrimaryTextColor = normalizeHexColor(
+    newState.primaryTextColor,
+    DEFAULT_PRIMARY_TEXT_COLOR
+  );
+  const normalizedSecondaryTextColor = normalizeHexColor(
+    newState.secondaryTextColor,
+    DEFAULT_SECONDARY_TEXT_COLOR
+  );
 
   const normalizedState = {
     logoEnabled: Boolean(newState.logoEnabled),
@@ -1682,6 +2107,11 @@ function applyState(newState, forceUpdate = false) {
       newState.customFaviconDataUrl
     ),
     retailerName: normalizeRetailerName(newState.retailerName),
+    brandColorsEnabled: Boolean(newState.brandColorsEnabled),
+    primaryColor: normalizedPrimaryColor,
+    secondaryColor: normalizedSecondaryColor,
+    primaryTextColor: normalizedPrimaryTextColor,
+    secondaryTextColor: normalizedSecondaryTextColor,
     selectedCurrency: normalizedSelectedCurrency,
     currencyRates: normalizedCurrencyRates,
     currencyRatesUpdatedAt: normalizedCurrencyRatesUpdatedAt
@@ -1695,6 +2125,16 @@ function applyState(newState, forceUpdate = false) {
     normalizedState.customFaviconDataUrl !== state.customFaviconDataUrl;
   const hasRetailerNameUpdate =
     normalizedState.retailerName !== state.retailerName;
+  const hasBrandColorsEnabledUpdate =
+    normalizedState.brandColorsEnabled !== state.brandColorsEnabled;
+  const hasPrimaryColorUpdate =
+    normalizedState.primaryColor !== state.primaryColor;
+  const hasSecondaryColorUpdate =
+    normalizedState.secondaryColor !== state.secondaryColor;
+  const hasPrimaryTextColorUpdate =
+    normalizedState.primaryTextColor !== state.primaryTextColor;
+  const hasSecondaryTextColorUpdate =
+    normalizedState.secondaryTextColor !== state.secondaryTextColor;
   const hasSelectedCurrencyUpdate =
     normalizedState.selectedCurrency !== state.selectedCurrency;
   const hasCurrencyRatesUpdate =
@@ -1710,6 +2150,12 @@ function applyState(newState, forceUpdate = false) {
     (hasFaviconDataUpdate || hasRetailerNameUpdate);
   const shouldRefreshText =
     normalizedState.textEnabled && hasRetailerNameUpdate;
+  const shouldRefreshBrandColors =
+    normalizedState.brandColorsEnabled &&
+    (hasPrimaryColorUpdate ||
+      hasSecondaryColorUpdate ||
+      hasPrimaryTextColorUpdate ||
+      hasSecondaryTextColorUpdate);
   const shouldRefreshCurrency =
     hasSelectedCurrencyUpdate ||
     (normalizedState.selectedCurrency !== DEFAULT_SELECTED_CURRENCY &&
@@ -1718,10 +2164,12 @@ function applyState(newState, forceUpdate = false) {
     normalizedState.logoEnabled !== state.logoEnabled ||
     normalizedState.faviconEnabled !== state.faviconEnabled ||
     normalizedState.textEnabled !== state.textEnabled ||
+    hasBrandColorsEnabledUpdate ||
     hasLogoInvertUpdate ||
     shouldRefreshLogo ||
     shouldRefreshFavicon ||
     shouldRefreshText ||
+    shouldRefreshBrandColors ||
     shouldRefreshCurrency;
 
   if (hasRetailerNameUpdate && state.textEnabled) {
@@ -1735,6 +2183,11 @@ function applyState(newState, forceUpdate = false) {
   state.customLogoInvert = normalizedState.customLogoInvert;
   state.customFaviconDataUrl = normalizedState.customFaviconDataUrl;
   state.retailerName = normalizedState.retailerName;
+  state.brandColorsEnabled = normalizedState.brandColorsEnabled;
+  state.primaryColor = normalizedState.primaryColor;
+  state.secondaryColor = normalizedState.secondaryColor;
+  state.primaryTextColor = normalizedState.primaryTextColor;
+  state.secondaryTextColor = normalizedState.secondaryTextColor;
   state.selectedCurrency = normalizedState.selectedCurrency;
   state.currencyRates = normalizedState.currencyRates;
   state.currencyRatesUpdatedAt = normalizedState.currencyRatesUpdatedAt;
@@ -1753,6 +2206,11 @@ function setFeatureState(partial) {
     customLogoInvert: state.customLogoInvert,
     customFaviconDataUrl: state.customFaviconDataUrl,
     retailerName: state.retailerName,
+    brandColorsEnabled: state.brandColorsEnabled,
+    primaryColor: state.primaryColor,
+    secondaryColor: state.secondaryColor,
+    primaryTextColor: state.primaryTextColor,
+    secondaryTextColor: state.secondaryTextColor,
     selectedCurrency: state.selectedCurrency,
     currencyRates: state.currencyRates,
     currencyRatesUpdatedAt: state.currencyRatesUpdatedAt
@@ -1776,6 +2234,30 @@ function setFeatureState(partial) {
   const hasRetailerName = Object.prototype.hasOwnProperty.call(
     partial,
     RETAILER_NAME_STORAGE_KEY
+  );
+  const hasBrandColorsEnabled = Object.prototype.hasOwnProperty.call(
+    partial,
+    BRAND_COLORS_ENABLED_STORAGE_KEY
+  );
+  const hasLegacyBrandColorsAutoEnabled = Object.prototype.hasOwnProperty.call(
+    partial,
+    LEGACY_BRAND_COLORS_AUTO_ENABLED_STORAGE_KEY
+  );
+  const hasPrimaryColor = Object.prototype.hasOwnProperty.call(
+    partial,
+    PRIMARY_COLOR_STORAGE_KEY
+  );
+  const hasSecondaryColor = Object.prototype.hasOwnProperty.call(
+    partial,
+    SECONDARY_COLOR_STORAGE_KEY
+  );
+  const hasPrimaryTextColor = Object.prototype.hasOwnProperty.call(
+    partial,
+    PRIMARY_TEXT_COLOR_STORAGE_KEY
+  );
+  const hasSecondaryTextColor = Object.prototype.hasOwnProperty.call(
+    partial,
+    SECONDARY_TEXT_COLOR_STORAGE_KEY
   );
   const hasSelectedCurrency = Object.prototype.hasOwnProperty.call(
     partial,
@@ -1818,6 +2300,28 @@ function setFeatureState(partial) {
     newState.retailerName = partial.retailerName;
   }
 
+  if (hasBrandColorsEnabled) {
+    newState.brandColorsEnabled = Boolean(partial.brandColorsEnabled);
+  } else if (hasLegacyBrandColorsAutoEnabled) {
+    newState.brandColorsEnabled = Boolean(partial.brandColorsAutoEnabled);
+  }
+
+  if (hasPrimaryColor) {
+    newState.primaryColor = partial.primaryColor;
+  }
+
+  if (hasSecondaryColor) {
+    newState.secondaryColor = partial.secondaryColor;
+  }
+
+  if (hasPrimaryTextColor) {
+    newState.primaryTextColor = partial.primaryTextColor;
+  }
+
+  if (hasSecondaryTextColor) {
+    newState.secondaryTextColor = partial.secondaryTextColor;
+  }
+
   if (hasSelectedCurrency) {
     newState.selectedCurrency = partial.selectedCurrency;
   }
@@ -1855,6 +2359,12 @@ function initialize() {
       textEnabled: false,
       enabled: false,
       retailerName: DEFAULT_RETAILER_NAME,
+      brandColorsEnabled: DEFAULT_BRAND_COLORS_ENABLED,
+      brandColorsAutoEnabled: DEFAULT_BRAND_COLORS_ENABLED,
+      primaryColor: DEFAULT_PRIMARY_COLOR,
+      secondaryColor: DEFAULT_SECONDARY_COLOR,
+      primaryTextColor: DEFAULT_PRIMARY_TEXT_COLOR,
+      secondaryTextColor: DEFAULT_SECONDARY_TEXT_COLOR,
       selectedCurrency: DEFAULT_SELECTED_CURRENCY
     },
     (result) => {
@@ -1895,6 +2405,24 @@ chrome.runtime.onMessage.addListener((message) => {
       Object.prototype.hasOwnProperty.call(message, "textEnabled") ||
       Object.prototype.hasOwnProperty.call(message, "enabled") ||
       Object.prototype.hasOwnProperty.call(message, RETAILER_NAME_STORAGE_KEY) ||
+      Object.prototype.hasOwnProperty.call(
+        message,
+        BRAND_COLORS_ENABLED_STORAGE_KEY
+      ) ||
+      Object.prototype.hasOwnProperty.call(
+        message,
+        LEGACY_BRAND_COLORS_AUTO_ENABLED_STORAGE_KEY
+      ) ||
+      Object.prototype.hasOwnProperty.call(message, PRIMARY_COLOR_STORAGE_KEY) ||
+      Object.prototype.hasOwnProperty.call(message, SECONDARY_COLOR_STORAGE_KEY) ||
+      Object.prototype.hasOwnProperty.call(
+        message,
+        PRIMARY_TEXT_COLOR_STORAGE_KEY
+      ) ||
+      Object.prototype.hasOwnProperty.call(
+        message,
+        SECONDARY_TEXT_COLOR_STORAGE_KEY
+      ) ||
       Object.prototype.hasOwnProperty.call(message, SELECTED_CURRENCY_STORAGE_KEY) ||
       Object.prototype.hasOwnProperty.call(message, CURRENCY_RATES_STORAGE_KEY) ||
       Object.prototype.hasOwnProperty.call(
@@ -1928,6 +2456,57 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
     if (Object.prototype.hasOwnProperty.call(changes, RETAILER_NAME_STORAGE_KEY)) {
       update.retailerName = changes[RETAILER_NAME_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        changes,
+        BRAND_COLORS_ENABLED_STORAGE_KEY
+      )
+    ) {
+      update.brandColorsEnabled = changes[BRAND_COLORS_ENABLED_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        changes,
+        LEGACY_BRAND_COLORS_AUTO_ENABLED_STORAGE_KEY
+      )
+    ) {
+      update.brandColorsAutoEnabled =
+        changes[LEGACY_BRAND_COLORS_AUTO_ENABLED_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, PRIMARY_COLOR_STORAGE_KEY)) {
+      update.primaryColor = changes[PRIMARY_COLOR_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(changes, SECONDARY_COLOR_STORAGE_KEY)
+    ) {
+      update.secondaryColor = changes[SECONDARY_COLOR_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(changes, PRIMARY_TEXT_COLOR_STORAGE_KEY)
+    ) {
+      update.primaryTextColor = changes[PRIMARY_TEXT_COLOR_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        changes,
+        SECONDARY_TEXT_COLOR_STORAGE_KEY
+      )
+    ) {
+      update.secondaryTextColor =
+        changes[SECONDARY_TEXT_COLOR_STORAGE_KEY].newValue;
       hasUpdate = true;
     }
 
