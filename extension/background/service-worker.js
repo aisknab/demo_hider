@@ -1,22 +1,3 @@
-const TOOLBAR_ICON_PATHS = {
-  16: "extension/icons/icon16.png",
-  32: "extension/icons/icon32.png",
-  48: "extension/icons/icon48.png",
-  128: "extension/icons/icon128.png"
-};
-
-function setIcon() {
-  chrome.action.setIcon({ path: TOOLBAR_ICON_PATHS }, () => {
-    if (chrome.runtime.lastError) {
-      console.error("Failed to update toolbar icon", chrome.runtime.lastError);
-    }
-  });
-}
-
-function syncIconWithStorage() {
-  setIcon();
-}
-
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.sync.get(null, (result) => {
     const hasLegacyEnabled = Object.prototype.hasOwnProperty.call(result, "enabled");
@@ -52,10 +33,7 @@ chrome.runtime.onInstalled.addListener(() => {
           if (chrome.runtime.lastError) {
             console.error("Unable to remove legacy toggle", chrome.runtime.lastError);
           }
-          syncIconWithStorage();
         });
-      } else {
-        syncIconWithStorage();
       }
     }
 
@@ -71,23 +49,3 @@ chrome.runtime.onInstalled.addListener(() => {
     }
   });
 });
-
-chrome.runtime.onStartup.addListener(syncIconWithStorage);
-
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "sync") {
-    return;
-  }
-
-  if (
-    Object.prototype.hasOwnProperty.call(changes, "logoEnabled") ||
-    Object.prototype.hasOwnProperty.call(changes, "faviconEnabled") ||
-    Object.prototype.hasOwnProperty.call(changes, "textEnabled") ||
-    Object.prototype.hasOwnProperty.call(changes, "enabled")
-  ) {
-    syncIconWithStorage();
-  }
-});
-
-setIcon();
-syncIconWithStorage();
