@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Demo Header Logo Hider",
   "description": "Apply Demo Retailer branding to the header logo and account name on supported pages.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "permissions": [
     "storage",
     "scripting",
