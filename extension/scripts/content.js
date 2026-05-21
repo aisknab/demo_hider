@@ -32,6 +32,7 @@ const EXCLUDED_TEXT_PARENT_NODES = new Set([
 
 const LOGO_WIDTH = 300;
 const LOGO_HEIGHT = 100;
+const HEADER_LOGO_MAX_HEIGHT = "38px";
 const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
 const CUSTOM_LOGO_INVERT_STORAGE_KEY = "customLogoInvert";
 const CUSTOM_FAVICON_STORAGE_KEY = "customFaviconDataUrl";
@@ -1546,6 +1547,7 @@ function ensureCustomLogo(originalElement) {
       maxWidth: originalElement.style.maxWidth,
       maxHeight: originalElement.style.maxHeight,
       boxSizing: originalElement.style.boxSizing,
+      objectFit: originalElement.style.objectFit,
       alignItems: originalElement.style.alignItems,
       justifyContent: originalElement.style.justifyContent,
       maskImage: originalElement.style.maskImage,
@@ -1565,6 +1567,8 @@ function ensureCustomLogo(originalElement) {
     originalElement.setAttribute("src", getActiveLogoDataUrl());
     originalElement.removeAttribute("srcset");
     originalElement.setAttribute("alt", getRetailerName());
+    originalElement.style.maxHeight = HEADER_LOGO_MAX_HEIGHT;
+    originalElement.style.objectFit = "contain";
 
     if (state.customLogoInvert) {
       originalElement.style.filter = "invert(1)";
@@ -1592,7 +1596,8 @@ function ensureCustomLogo(originalElement) {
     customLogoImage.style.filter = state.customLogoInvert ? "invert(1)" : "";
     customLogoImage.style.display = "block";
     customLogoImage.style.width = "120px";
-    customLogoImage.style.height = "40px";
+    customLogoImage.style.height = HEADER_LOGO_MAX_HEIGHT;
+    customLogoImage.style.maxHeight = HEADER_LOGO_MAX_HEIGHT;
     customLogoImage.style.objectFit = "contain";
     originalElement.style.display = "none";
     originalElement.setAttribute("aria-hidden", "true");
@@ -1669,6 +1674,11 @@ function removeInjectedFaviconLink() {
 
 function applyFaviconCustomizations() {
   if (!document.head) {
+    return;
+  }
+
+  if (hasCommerceMaxLogo()) {
+    restoreFaviconCustomizations();
     return;
   }
 
@@ -1850,6 +1860,12 @@ function removeCustomLogo(originalElement) {
     originalElement.style.boxSizing = originalAttributes.boxSizing;
   } else {
     originalElement.style.removeProperty("box-sizing");
+  }
+
+  if (typeof originalAttributes.objectFit === "string") {
+    originalElement.style.objectFit = originalAttributes.objectFit;
+  } else {
+    originalElement.style.removeProperty("object-fit");
   }
 
   if (typeof originalAttributes.alignItems === "string") {
