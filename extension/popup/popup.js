@@ -16,6 +16,7 @@ const customFaviconClearButton = document.getElementById("custom-favicon-clear")
 const customFaviconPreview = document.getElementById("custom-favicon-preview");
 const customFaviconPreviewImage = document.getElementById("custom-favicon-preview-image");
 const customFaviconStatus = document.getElementById("custom-favicon-status");
+const currencyToggle = document.getElementById("currency-toggle");
 const currencySelect = document.getElementById("currency-select");
 const currencyStatus = document.getElementById("currency-status");
 const brandColorsToggle = document.getElementById("brand-colors-toggle");
@@ -48,6 +49,7 @@ const PRIMARY_COLOR_STORAGE_KEY = "primaryColor";
 const SECONDARY_COLOR_STORAGE_KEY = "secondaryColor";
 const PRIMARY_TEXT_COLOR_STORAGE_KEY = "primaryTextColor";
 const SECONDARY_TEXT_COLOR_STORAGE_KEY = "secondaryTextColor";
+const CURRENCY_ENABLED_STORAGE_KEY = "currencyEnabled";
 const DEFAULT_RETAILER_NAME = "demo retailer";
 const DEFAULT_FAVICON_ENABLED = false;
 const DEFAULT_BRAND_COLORS_ENABLED = false;
@@ -142,6 +144,7 @@ const state = {
   secondaryColor: DEFAULT_SECONDARY_COLOR,
   primaryTextColor: DEFAULT_PRIMARY_TEXT_COLOR,
   secondaryTextColor: DEFAULT_SECONDARY_TEXT_COLOR,
+  currencyEnabled: false,
   selectedCurrency: DEFAULT_SELECTED_CURRENCY,
   currencyRates: { USD: 1 },
   currencyRatesUpdatedAt: 0
@@ -152,7 +155,8 @@ function getReplaceAllToggleState(currentState) {
     Boolean(currentState.logoEnabled),
     Boolean(currentState.faviconEnabled),
     Boolean(currentState.textEnabled),
-    Boolean(currentState.brandColorsEnabled)
+    Boolean(currentState.brandColorsEnabled),
+    Boolean(currentState.currencyEnabled)
   ];
 
   const allEnabled = toggleStates.every((enabled) => enabled);
@@ -864,14 +868,29 @@ function updateCurrencyUi() {
     return;
   }
 
+  if (currencyToggle) {
+    currencyToggle.checked = state.currencyEnabled;
+  }
+
   if (document.activeElement !== currencySelect) {
     currencySelect.value = state.selectedCurrency;
   }
 
   const selectedCurrency = state.selectedCurrency;
 
+  if (!state.currencyEnabled) {
+    if (selectedCurrency === DEFAULT_SELECTED_CURRENCY) {
+      setCurrencyStatus("Replace is off. Dollar amounts stay in USD.");
+    } else {
+      setCurrencyStatus(
+        `Replace is off. ${selectedCurrency} is saved but not applied.`
+      );
+    }
+    return;
+  }
+
   if (selectedCurrency === DEFAULT_SELECTED_CURRENCY) {
-    setCurrencyStatus("Dollar amounts stay in USD.");
+    setCurrencyStatus("Replace is on. Dollar amounts stay in USD.");
     return;
   }
 
@@ -1399,6 +1418,7 @@ function applyState(newState) {
     newState.secondaryTextColor,
     DEFAULT_SECONDARY_TEXT_COLOR
   );
+  state.currencyEnabled = Boolean(newState.currencyEnabled);
   state.selectedCurrency = normalizeCurrencyCode(newState.selectedCurrency);
   state.currencyRates = normalizeCurrencyRates(newState.currencyRates);
   state.currencyRatesUpdatedAt = normalizeCurrencyRatesUpdatedAt(
@@ -1408,6 +1428,9 @@ function applyState(newState) {
   logoToggle.checked = state.logoEnabled;
   faviconToggle.checked = state.faviconEnabled;
   textToggle.checked = state.textEnabled;
+  if (currencyToggle) {
+    currencyToggle.checked = state.currencyEnabled;
+  }
   if (replaceAllToggle) {
     const replaceAllState = getReplaceAllToggleState(state);
     replaceAllToggle.checked = replaceAllState.allEnabled;
@@ -1444,6 +1467,7 @@ function buildUpdatedState(partial) {
     secondaryColor: state.secondaryColor,
     primaryTextColor: state.primaryTextColor,
     secondaryTextColor: state.secondaryTextColor,
+    currencyEnabled: state.currencyEnabled,
     selectedCurrency: state.selectedCurrency,
     currencyRates: state.currencyRates,
     currencyRatesUpdatedAt: state.currencyRatesUpdatedAt
@@ -1491,6 +1515,10 @@ function buildUpdatedState(partial) {
   const hasSecondaryTextColor = Object.prototype.hasOwnProperty.call(
     partial,
     SECONDARY_TEXT_COLOR_STORAGE_KEY
+  );
+  const hasCurrencyEnabled = Object.prototype.hasOwnProperty.call(
+    partial,
+    CURRENCY_ENABLED_STORAGE_KEY
   );
   const hasSelectedCurrency = Object.prototype.hasOwnProperty.call(
     partial,
@@ -1555,6 +1583,10 @@ function buildUpdatedState(partial) {
     newState.secondaryTextColor = partial.secondaryTextColor;
   }
 
+  if (hasCurrencyEnabled) {
+    newState.currencyEnabled = Boolean(partial.currencyEnabled);
+  }
+
   if (hasSelectedCurrency) {
     newState.selectedCurrency = partial.selectedCurrency;
   }
@@ -1571,12 +1603,14 @@ function buildUpdatedState(partial) {
     !hasLogo &&
     !hasFavicon &&
     !hasText &&
+    !hasCurrencyEnabled &&
     Object.prototype.hasOwnProperty.call(partial, "enabled")
   ) {
     const boolValue = Boolean(partial.enabled);
     newState.logoEnabled = boolValue;
     newState.faviconEnabled = boolValue;
     newState.textEnabled = boolValue;
+    newState.currencyEnabled = boolValue;
   }
 
   return newState;
@@ -1601,6 +1635,7 @@ function syncStateWithStorage() {
       secondaryColor: DEFAULT_SECONDARY_COLOR,
       primaryTextColor: DEFAULT_PRIMARY_TEXT_COLOR,
       secondaryTextColor: DEFAULT_SECONDARY_TEXT_COLOR,
+      currencyEnabled: false,
       selectedCurrency: DEFAULT_SELECTED_CURRENCY
     },
     (result) => {
@@ -1624,10 +1659,11 @@ function syncStateWithStorage() {
 
           const selectedCurrency = normalizeCurrencyCode(result.selectedCurrency);
           if (
+            Boolean(result.currencyEnabled) &&
             selectedCurrency !== DEFAULT_SELECTED_CURRENCY &&
             !hasFreshCurrencyRate(selectedCurrency)
           ) {
-            void applySelectedCurrency(selectedCurrency, { forceRefresh: true });
+            void applySelectedCurrency(selectedCurrency, { ensureRate: true });
           }
         }
       );
@@ -1640,7 +1676,8 @@ function persistState(newState) {
     {
       logoEnabled: Boolean(newState.logoEnabled),
       faviconEnabled: Boolean(newState.faviconEnabled),
-      textEnabled: Boolean(newState.textEnabled)
+      textEnabled: Boolean(newState.textEnabled),
+      currencyEnabled: Boolean(newState.currencyEnabled)
     },
     () => {
       if (chrome.runtime.lastError) {
@@ -1847,10 +1884,16 @@ async function fetchLatestCurrencyRates(requiredCurrencyCode = null) {
 
 async function applySelectedCurrency(nextCurrencyCode, options = {}) {
   const forceRefresh = Boolean(options.forceRefresh);
+  const ensureRate = Boolean(options.ensureRate);
   const normalizedCode = normalizeCurrencyCode(nextCurrencyCode);
   const previousCode = state.selectedCurrency;
+  const shouldFetchRates = state.currencyEnabled || ensureRate;
+  const needsRateRefresh =
+    normalizedCode !== DEFAULT_SELECTED_CURRENCY &&
+    shouldFetchRates &&
+    (!hasFreshCurrencyRate(normalizedCode) || forceRefresh);
 
-  if (normalizedCode === previousCode && !forceRefresh) {
+  if (normalizedCode === previousCode && !forceRefresh && !needsRateRefresh) {
     updateCurrencyUi();
     return;
   }
@@ -1862,10 +1905,7 @@ async function applySelectedCurrency(nextCurrencyCode, options = {}) {
     let nextUpdatedAt = state.currencyRatesUpdatedAt;
     let usedCachedRates = false;
 
-    if (
-      normalizedCode !== DEFAULT_SELECTED_CURRENCY &&
-      (!hasFreshCurrencyRate(normalizedCode) || forceRefresh)
-    ) {
+    if (needsRateRefresh) {
       const cachedRate = getCurrencyRateFromRates(normalizedCode, state.currencyRates);
 
       try {
@@ -3719,12 +3759,21 @@ if (replaceAllToggle) {
       logoEnabled: replaceEnabled,
       faviconEnabled: replaceEnabled,
       textEnabled: replaceEnabled,
-      brandColorsEnabled: replaceEnabled
+      brandColorsEnabled: replaceEnabled,
+      currencyEnabled: replaceEnabled
     };
 
     applyState(newState);
     persistState(newState);
     persistBrandColors(newState);
+
+    if (
+      replaceEnabled &&
+      state.selectedCurrency !== DEFAULT_SELECTED_CURRENCY &&
+      !hasFreshCurrencyRate(state.selectedCurrency)
+    ) {
+      void applySelectedCurrency(state.selectedCurrency, { ensureRate: true });
+    }
   });
 }
 
@@ -3757,6 +3806,26 @@ if (brandColorsToggle) {
 
     applyState(newState);
     persistBrandColors(newState);
+  });
+}
+
+if (currencyToggle) {
+  currencyToggle.addEventListener("change", () => {
+    const newState = {
+      ...state,
+      currencyEnabled: currencyToggle.checked
+    };
+
+    applyState(newState);
+    persistState(newState);
+
+    if (
+      newState.currencyEnabled &&
+      newState.selectedCurrency !== DEFAULT_SELECTED_CURRENCY &&
+      !hasFreshCurrencyRate(newState.selectedCurrency)
+    ) {
+      void applySelectedCurrency(newState.selectedCurrency, { ensureRate: true });
+    }
   });
 }
 
@@ -4037,6 +4106,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     ) {
       update.secondaryTextColor =
         changes[SECONDARY_TEXT_COLOR_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, CURRENCY_ENABLED_STORAGE_KEY)) {
+      update.currencyEnabled = changes[CURRENCY_ENABLED_STORAGE_KEY].newValue;
       hasUpdate = true;
     }
 

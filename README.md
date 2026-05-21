@@ -28,7 +28,7 @@ Changes are client-side only and do not modify backend data.
 - Custom logo upload.
 - Custom favicon upload.
 - Auto-grab branding from active tab (name, logo, favicon, brand colors).
-- Currency selector with grouped options: `US`, `EMEA`, `APAC`.
+- Currency section with a `Replace` toggle and grouped options: `US`, `EMEA`, `APAC`.
 - Live currency conversion for `$` amounts, including dynamically rendered content.
 
 ## Brand color replacement behavior
@@ -45,6 +45,7 @@ Changes are client-side only and do not modify backend data.
 ## Currency conversion behavior
 
 - Conversion applies only to values that include a leading `$`.
+- Conversion only runs when `Currency -> Replace` is enabled.
 - Converted values are rendered using the selected target currency format.
 - Conversion updates as pages re-render.
 - Exchange rates are fetched from online APIs and cached locally.
@@ -65,8 +66,8 @@ Changes are client-side only and do not modify backend data.
 3. Optionally set a retailer name, upload custom logo/favicon assets, and edit brand colors.
 4. To auto-grab assets and colors, open a retailer site tab and click `Auto grab from active tab`.
 5. Enable `Brand colors -> Replace` to apply the grabbed/manual color theme on Criteo pages.
-6. For currency conversion, choose a currency from the dropdown.
-7. Any visible `$`-prefixed amounts on supported pages will be converted.
+6. For currency conversion, choose a currency from the dropdown and enable `Currency -> Replace`.
+7. Any visible `$`-prefixed amounts on supported pages will be converted while the toggle is on.
 
 ## Data and storage
 

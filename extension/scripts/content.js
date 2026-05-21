@@ -1,10 +1,16 @@
 const DEFAULT_RETAILER_NAME = "demo retailer";
 const DEFAULT_FAVICON_ENABLED = false;
 const LOGO_SELECTOR = "body > app-root > app-shell > mat-sidenav-container > mat-sidenav-content > app-header > div > mat-toolbar > div.toolbar-left > app-header-logo > img";
+const COMMERCE_YIELD_LOGO_SELECTOR =
+  '[data-test="defaultLogo"].criteo-logo-commerce-yield';
+const COMMERCE_MAX_LOGO_SELECTOR =
+  '[data-test="defaultLogo"].criteo-logo-commerce-max';
 const ACCOUNT_NAME_SELECTORS = [
   '[data-test="headerAccountListButtonText"]',
   "span.cds-p1-bold"
 ];
+const PRIVATE_MARKET_ACCOUNT_NAME_SELECTOR = ".mdc-button__label > span";
+const PRIVATE_MARKET_SUPPLY_ACCOUNT_PATTERN = /\bprivate\s+market\s+supply\b/i;
 const RETAILER_COLUMN_CELL_SELECTOR = "[class*='column-retailers']";
 const SHOW_MORE_POPOVER_SELECTOR = "app-show-more-popover";
 const RETAILER_COLUMN_TEXT_DESCENDANT_SELECTORS = [
@@ -36,6 +42,7 @@ const PRIMARY_COLOR_STORAGE_KEY = "primaryColor";
 const SECONDARY_COLOR_STORAGE_KEY = "secondaryColor";
 const PRIMARY_TEXT_COLOR_STORAGE_KEY = "primaryTextColor";
 const SECONDARY_TEXT_COLOR_STORAGE_KEY = "secondaryTextColor";
+const CURRENCY_ENABLED_STORAGE_KEY = "currencyEnabled";
 const SELECTED_CURRENCY_STORAGE_KEY = "selectedCurrency";
 const CURRENCY_RATES_STORAGE_KEY = "currencyRates";
 const CURRENCY_RATES_UPDATED_AT_STORAGE_KEY = "currencyRatesUpdatedAt";
@@ -95,6 +102,7 @@ const LEADING_AMOUNT_PATTERN =
   /^\s*(-?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.\d+)?)/;
 const TRAILING_DOLLAR_PATTERN = /^(.*)\$\s*$/;
 const CUSTOM_LOGO_ATTR = "data-demo-hider-custom-logo";
+const CUSTOM_LOGO_IMAGE_ATTR = "data-demo-hider-custom-logo-image";
 const CUSTOM_FAVICON_ATTR = "data-demo-hider-custom-favicon";
 const ORIGINAL_TEXT_ATTR = "data-demo-hider-original-text";
 
@@ -111,6 +119,7 @@ const state = {
   secondaryColor: DEFAULT_SECONDARY_COLOR,
   primaryTextColor: DEFAULT_PRIMARY_TEXT_COLOR,
   secondaryTextColor: DEFAULT_SECONDARY_TEXT_COLOR,
+  currencyEnabled: false,
   selectedCurrency: DEFAULT_SELECTED_CURRENCY,
   currencyRates: { USD: 1 },
   currencyRatesUpdatedAt: 0
@@ -1025,6 +1034,11 @@ function applyCurrencyCustomizations() {
     return;
   }
 
+  if (!state.currencyEnabled) {
+    restoreCurrencyCustomizations();
+    return;
+  }
+
   ensureCurrencyShadowObservers();
 
   const selectedCurrency = normalizeCurrencyCode(state.selectedCurrency);
@@ -1462,7 +1476,37 @@ function getAccountNameElements() {
     });
   });
 
+  document
+    .querySelectorAll(PRIVATE_MARKET_ACCOUNT_NAME_SELECTOR)
+    .forEach((element) => {
+      if (isPrivateMarketAccountNameElement(element)) {
+        elements.add(element);
+      }
+    });
+
   return Array.from(elements);
+}
+
+function getLogoElements() {
+  const elements = new Set();
+
+  document.querySelectorAll(LOGO_SELECTOR).forEach((element) => {
+    elements.add(element);
+  });
+
+  document.querySelectorAll(COMMERCE_YIELD_LOGO_SELECTOR).forEach((element) => {
+    elements.add(element);
+  });
+
+  return Array.from(elements);
+}
+
+function hasCommerceMaxLogo() {
+  if (!document || typeof document.querySelector !== "function") {
+    return false;
+  }
+
+  return Boolean(document.querySelector(COMMERCE_MAX_LOGO_SELECTOR));
 }
 
 function ensureCustomLogo(originalElement) {
@@ -1475,7 +1519,19 @@ function ensureCustomLogo(originalElement) {
       src: originalElement.getAttribute("src"),
       srcset: originalElement.getAttribute("srcset"),
       alt: originalElement.getAttribute("alt"),
-      filter: originalElement.style.filter
+      ariaLabel: originalElement.getAttribute("aria-label"),
+      innerHTML: originalElement.innerHTML,
+      filter: originalElement.style.filter,
+      backgroundImage: originalElement.style.backgroundImage,
+      backgroundPosition: originalElement.style.backgroundPosition,
+      backgroundRepeat: originalElement.style.backgroundRepeat,
+      backgroundSize: originalElement.style.backgroundSize,
+      backgroundColor: originalElement.style.backgroundColor,
+      display: originalElement.style.display,
+      alignItems: originalElement.style.alignItems,
+      justifyContent: originalElement.style.justifyContent,
+      maskImage: originalElement.style.maskImage,
+      webkitMaskImage: originalElement.style.webkitMaskImage
     };
 
     customLogos.set(originalElement, originalAttributes);
@@ -1487,9 +1543,38 @@ function ensureCustomLogo(originalElement) {
       ? originalAttributes.filter
       : "";
 
-  originalElement.setAttribute("src", getActiveLogoDataUrl());
-  originalElement.removeAttribute("srcset");
-  originalElement.setAttribute("alt", getRetailerName());
+  if (originalElement instanceof HTMLImageElement) {
+    originalElement.setAttribute("src", getActiveLogoDataUrl());
+    originalElement.removeAttribute("srcset");
+    originalElement.setAttribute("alt", getRetailerName());
+  } else {
+    let customLogoImage = originalElement.querySelector(
+      `img[${CUSTOM_LOGO_IMAGE_ATTR}]`
+    );
+
+    if (!(customLogoImage instanceof HTMLImageElement)) {
+      originalElement.textContent = "";
+      customLogoImage = document.createElement("img");
+      customLogoImage.setAttribute(CUSTOM_LOGO_IMAGE_ATTR, "true");
+      originalElement.append(customLogoImage);
+    }
+
+    customLogoImage.setAttribute("src", getActiveLogoDataUrl());
+    customLogoImage.setAttribute("alt", getRetailerName());
+    customLogoImage.style.width = "100%";
+    customLogoImage.style.height = "100%";
+    customLogoImage.style.objectFit = "contain";
+    customLogoImage.style.display = "block";
+
+    originalElement.style.backgroundImage = "none";
+    originalElement.style.backgroundColor = "transparent";
+    originalElement.style.display = "inline-flex";
+    originalElement.style.alignItems = "center";
+    originalElement.style.justifyContent = "center";
+    originalElement.style.maskImage = "none";
+    originalElement.style.webkitMaskImage = "none";
+    originalElement.setAttribute("aria-label", getRetailerName());
+  }
 
   if (state.customLogoInvert) {
     originalElement.style.filter = "invert(1)";
@@ -1641,10 +1726,84 @@ function removeCustomLogo(originalElement) {
     originalElement.removeAttribute("alt");
   }
 
+  if (originalAttributes.ariaLabel !== null) {
+    originalElement.setAttribute("aria-label", originalAttributes.ariaLabel);
+  } else {
+    originalElement.removeAttribute("aria-label");
+  }
+
+  if (
+    !(originalElement instanceof HTMLImageElement) &&
+    typeof originalAttributes.innerHTML === "string"
+  ) {
+    originalElement.innerHTML = originalAttributes.innerHTML;
+  }
+
   if (typeof originalAttributes.filter === "string") {
     originalElement.style.filter = originalAttributes.filter;
   } else {
     originalElement.style.removeProperty("filter");
+  }
+
+  if (typeof originalAttributes.backgroundImage === "string") {
+    originalElement.style.backgroundImage = originalAttributes.backgroundImage;
+  } else {
+    originalElement.style.removeProperty("background-image");
+  }
+
+  if (typeof originalAttributes.backgroundPosition === "string") {
+    originalElement.style.backgroundPosition =
+      originalAttributes.backgroundPosition;
+  } else {
+    originalElement.style.removeProperty("background-position");
+  }
+
+  if (typeof originalAttributes.backgroundRepeat === "string") {
+    originalElement.style.backgroundRepeat = originalAttributes.backgroundRepeat;
+  } else {
+    originalElement.style.removeProperty("background-repeat");
+  }
+
+  if (typeof originalAttributes.backgroundSize === "string") {
+    originalElement.style.backgroundSize = originalAttributes.backgroundSize;
+  } else {
+    originalElement.style.removeProperty("background-size");
+  }
+
+  if (typeof originalAttributes.backgroundColor === "string") {
+    originalElement.style.backgroundColor = originalAttributes.backgroundColor;
+  } else {
+    originalElement.style.removeProperty("background-color");
+  }
+
+  if (typeof originalAttributes.display === "string") {
+    originalElement.style.display = originalAttributes.display;
+  } else {
+    originalElement.style.removeProperty("display");
+  }
+
+  if (typeof originalAttributes.alignItems === "string") {
+    originalElement.style.alignItems = originalAttributes.alignItems;
+  } else {
+    originalElement.style.removeProperty("align-items");
+  }
+
+  if (typeof originalAttributes.justifyContent === "string") {
+    originalElement.style.justifyContent = originalAttributes.justifyContent;
+  } else {
+    originalElement.style.removeProperty("justify-content");
+  }
+
+  if (typeof originalAttributes.maskImage === "string") {
+    originalElement.style.maskImage = originalAttributes.maskImage;
+  } else {
+    originalElement.style.removeProperty("mask-image");
+  }
+
+  if (typeof originalAttributes.webkitMaskImage === "string") {
+    originalElement.style.webkitMaskImage = originalAttributes.webkitMaskImage;
+  } else {
+    originalElement.style.removeProperty("-webkit-mask-image");
   }
 
   originalElement.removeAttribute(CUSTOM_LOGO_ATTR);
@@ -1702,6 +1861,28 @@ function getAccountNamePriority(element) {
   }
 
   return 1;
+}
+
+function isPrivateMarketAccountNameElement(element) {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const text = (element.textContent ?? "").trim();
+
+  if (!text) {
+    return false;
+  }
+
+  if (text === getRetailerName() || element.hasAttribute(ORIGINAL_TEXT_ATTR)) {
+    return true;
+  }
+
+  if (originalAccountName && text === originalAccountName) {
+    return true;
+  }
+
+  return PRIVATE_MARKET_SUPPLY_ACCOUNT_PATTERN.test(text);
 }
 
 function setOriginalAccountName(value, source, priority = 0) {
@@ -1979,16 +2160,21 @@ function restoreGlobalAccountNameReplacements() {
 }
 
 function applyLogoCustomizations() {
-  const logoElements = document.querySelectorAll(LOGO_SELECTOR);
+  const logoElements = getLogoElements();
   logoElements.forEach((element) => ensureCustomLogo(element));
 }
 
 function restoreLogoCustomizations() {
-  const logoElements = document.querySelectorAll(LOGO_SELECTOR);
+  const logoElements = getLogoElements();
   logoElements.forEach((element) => removeCustomLogo(element));
 }
 
 function applyAccountNameCustomizations() {
+  if (hasCommerceMaxLogo()) {
+    restoreAccountNameCustomizations();
+    return;
+  }
+
   const accountNameElements = getAccountNameElements();
   accountNameElements.forEach((element) => applyCustomAccountName(element));
   applyRetailerCellCustomizations();
@@ -2032,7 +2218,11 @@ function updateCustomizations() {
     restoreBrandColorCustomizations();
   }
 
-  applyCurrencyCustomizations();
+  if (state.currencyEnabled) {
+    applyCurrencyCustomizations();
+  } else {
+    restoreCurrencyCustomizations();
+  }
 }
 
 function ensureObserver() {
@@ -2057,7 +2247,9 @@ function ensureObserver() {
       applyBrandColorCustomizations();
     }
 
-    applyCurrencyCustomizations();
+    if (state.currencyEnabled) {
+      applyCurrencyCustomizations();
+    }
   });
 
   observer.observe(document.documentElement, {
@@ -2112,6 +2304,7 @@ function applyState(newState, forceUpdate = false) {
     secondaryColor: normalizedSecondaryColor,
     primaryTextColor: normalizedPrimaryTextColor,
     secondaryTextColor: normalizedSecondaryTextColor,
+    currencyEnabled: Boolean(newState.currencyEnabled),
     selectedCurrency: normalizedSelectedCurrency,
     currencyRates: normalizedCurrencyRates,
     currencyRatesUpdatedAt: normalizedCurrencyRatesUpdatedAt
@@ -2135,6 +2328,8 @@ function applyState(newState, forceUpdate = false) {
     normalizedState.primaryTextColor !== state.primaryTextColor;
   const hasSecondaryTextColorUpdate =
     normalizedState.secondaryTextColor !== state.secondaryTextColor;
+  const hasCurrencyEnabledUpdate =
+    normalizedState.currencyEnabled !== state.currencyEnabled;
   const hasSelectedCurrencyUpdate =
     normalizedState.selectedCurrency !== state.selectedCurrency;
   const hasCurrencyRatesUpdate =
@@ -2157,9 +2352,11 @@ function applyState(newState, forceUpdate = false) {
       hasPrimaryTextColorUpdate ||
       hasSecondaryTextColorUpdate);
   const shouldRefreshCurrency =
-    hasSelectedCurrencyUpdate ||
-    (normalizedState.selectedCurrency !== DEFAULT_SELECTED_CURRENCY &&
-      (hasCurrencyRatesUpdate || hasCurrencyRatesUpdatedAtUpdate));
+    hasCurrencyEnabledUpdate ||
+    (normalizedState.currencyEnabled &&
+      (hasSelectedCurrencyUpdate ||
+        (normalizedState.selectedCurrency !== DEFAULT_SELECTED_CURRENCY &&
+          (hasCurrencyRatesUpdate || hasCurrencyRatesUpdatedAtUpdate))));
   const hasChanged =
     normalizedState.logoEnabled !== state.logoEnabled ||
     normalizedState.faviconEnabled !== state.faviconEnabled ||
@@ -2188,6 +2385,7 @@ function applyState(newState, forceUpdate = false) {
   state.secondaryColor = normalizedState.secondaryColor;
   state.primaryTextColor = normalizedState.primaryTextColor;
   state.secondaryTextColor = normalizedState.secondaryTextColor;
+  state.currencyEnabled = normalizedState.currencyEnabled;
   state.selectedCurrency = normalizedState.selectedCurrency;
   state.currencyRates = normalizedState.currencyRates;
   state.currencyRatesUpdatedAt = normalizedState.currencyRatesUpdatedAt;
@@ -2211,6 +2409,7 @@ function setFeatureState(partial) {
     secondaryColor: state.secondaryColor,
     primaryTextColor: state.primaryTextColor,
     secondaryTextColor: state.secondaryTextColor,
+    currencyEnabled: state.currencyEnabled,
     selectedCurrency: state.selectedCurrency,
     currencyRates: state.currencyRates,
     currencyRatesUpdatedAt: state.currencyRatesUpdatedAt
@@ -2258,6 +2457,10 @@ function setFeatureState(partial) {
   const hasSecondaryTextColor = Object.prototype.hasOwnProperty.call(
     partial,
     SECONDARY_TEXT_COLOR_STORAGE_KEY
+  );
+  const hasCurrencyEnabled = Object.prototype.hasOwnProperty.call(
+    partial,
+    CURRENCY_ENABLED_STORAGE_KEY
   );
   const hasSelectedCurrency = Object.prototype.hasOwnProperty.call(
     partial,
@@ -2322,6 +2525,10 @@ function setFeatureState(partial) {
     newState.secondaryTextColor = partial.secondaryTextColor;
   }
 
+  if (hasCurrencyEnabled) {
+    newState.currencyEnabled = Boolean(partial.currencyEnabled);
+  }
+
   if (hasSelectedCurrency) {
     newState.selectedCurrency = partial.selectedCurrency;
   }
@@ -2338,12 +2545,14 @@ function setFeatureState(partial) {
     !hasLogo &&
     !hasFavicon &&
     !hasText &&
+    !hasCurrencyEnabled &&
     Object.prototype.hasOwnProperty.call(partial, "enabled")
   ) {
     const boolValue = Boolean(partial.enabled);
     newState.logoEnabled = boolValue;
     newState.faviconEnabled = boolValue;
     newState.textEnabled = boolValue;
+    newState.currencyEnabled = boolValue;
   }
 
   applyState(newState, !isInitialized);
@@ -2365,6 +2574,7 @@ function initialize() {
       secondaryColor: DEFAULT_SECONDARY_COLOR,
       primaryTextColor: DEFAULT_PRIMARY_TEXT_COLOR,
       secondaryTextColor: DEFAULT_SECONDARY_TEXT_COLOR,
+      currencyEnabled: false,
       selectedCurrency: DEFAULT_SELECTED_CURRENCY
     },
     (result) => {
@@ -2423,6 +2633,7 @@ chrome.runtime.onMessage.addListener((message) => {
         message,
         SECONDARY_TEXT_COLOR_STORAGE_KEY
       ) ||
+      Object.prototype.hasOwnProperty.call(message, CURRENCY_ENABLED_STORAGE_KEY) ||
       Object.prototype.hasOwnProperty.call(message, SELECTED_CURRENCY_STORAGE_KEY) ||
       Object.prototype.hasOwnProperty.call(message, CURRENCY_RATES_STORAGE_KEY) ||
       Object.prototype.hasOwnProperty.call(
@@ -2507,6 +2718,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     ) {
       update.secondaryTextColor =
         changes[SECONDARY_TEXT_COLOR_STORAGE_KEY].newValue;
+      hasUpdate = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, CURRENCY_ENABLED_STORAGE_KEY)) {
+      update.currencyEnabled = changes[CURRENCY_ENABLED_STORAGE_KEY].newValue;
       hasUpdate = true;
     }
 

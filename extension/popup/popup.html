@@ -169,7 +169,14 @@
         />
       </section>
       <section class="currency" aria-label="Currency conversion">
-        <label class="currency-label" for="currency-select">Currency</label>
+        <div class="section-heading">
+          <label class="currency-label" for="currency-select">Currency</label>
+          <label class="toggle toggle-inline" for="currency-toggle">
+            <span class="label-text">Replace</span>
+            <input id="currency-toggle" type="checkbox" />
+            <span class="slider" aria-hidden="true"></span>
+          </label>
+        </div>
         <select id="currency-select" class="currency-select">
           <optgroup label="US">
             <option value="USD">US Dollar (USD, $)</option>
