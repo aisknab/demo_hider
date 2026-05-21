@@ -1487,22 +1487,28 @@ function getAccountNameElements() {
   return Array.from(elements);
 }
 
-function getLogoElements() {
-  const elements = new Set();
+function getHeaderLogoImageElements() {
+  const elements = [];
 
   document.querySelectorAll(LOGO_SELECTOR).forEach((element) => {
     if (element.hasAttribute(CUSTOM_LOGO_IMAGE_ATTR)) {
       return;
     }
 
-    elements.add(element);
+    elements.push(element);
   });
 
-  document.querySelectorAll(COMMERCE_YIELD_LOGO_SELECTOR).forEach((element) => {
-    elements.add(element);
-  });
+  return elements;
+}
 
-  return Array.from(elements);
+function getCommerceYieldLogoElements() {
+  return Array.from(document.querySelectorAll(COMMERCE_YIELD_LOGO_SELECTOR));
+}
+
+function removeInjectedCustomLogoImages() {
+  document
+    .querySelectorAll(`img[${CUSTOM_LOGO_IMAGE_ATTR}]`)
+    .forEach((element) => element.remove());
 }
 
 function hasCommerceMaxLogo() {
@@ -1584,6 +1590,10 @@ function ensureCustomLogo(originalElement) {
     customLogoImage.setAttribute("src", getActiveLogoDataUrl());
     customLogoImage.setAttribute("alt", getRetailerName());
     customLogoImage.style.filter = state.customLogoInvert ? "invert(1)" : "";
+    customLogoImage.style.display = "block";
+    customLogoImage.style.width = "120px";
+    customLogoImage.style.height = "40px";
+    customLogoImage.style.objectFit = "contain";
     originalElement.style.display = "none";
     originalElement.setAttribute("aria-hidden", "true");
     originalElement.style.filter = originalFilter;
@@ -2220,12 +2230,25 @@ function restoreGlobalAccountNameReplacements() {
 }
 
 function applyLogoCustomizations() {
-  const logoElements = getLogoElements();
-  logoElements.forEach((element) => ensureCustomLogo(element));
+  const headerLogoImages = getHeaderLogoImageElements();
+
+  if (headerLogoImages.length > 0) {
+    removeInjectedCustomLogoImages();
+    getCommerceYieldLogoElements().forEach((element) => removeCustomLogo(element));
+    headerLogoImages.forEach((element) => ensureCustomLogo(element));
+    return;
+  }
+
+  getCommerceYieldLogoElements().forEach((element) => ensureCustomLogo(element));
 }
 
 function restoreLogoCustomizations() {
-  const logoElements = getLogoElements();
+  removeInjectedCustomLogoImages();
+
+  const logoElements = [
+    ...getHeaderLogoImageElements(),
+    ...getCommerceYieldLogoElements()
+  ];
   logoElements.forEach((element) => removeCustomLogo(element));
 }
 
