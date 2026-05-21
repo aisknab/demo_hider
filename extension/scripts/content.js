@@ -32,8 +32,6 @@ const EXCLUDED_TEXT_PARENT_NODES = new Set([
 
 const LOGO_WIDTH = 300;
 const LOGO_HEIGHT = 100;
-const SPAN_LOGO_REPLACEMENT_WIDTH = "160px";
-const SPAN_LOGO_REPLACEMENT_HEIGHT = "44px";
 const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
 const CUSTOM_LOGO_INVERT_STORAGE_KEY = "customLogoInvert";
 const CUSTOM_FAVICON_STORAGE_KEY = "customFaviconDataUrl";
@@ -1493,6 +1491,10 @@ function getLogoElements() {
   const elements = new Set();
 
   document.querySelectorAll(LOGO_SELECTOR).forEach((element) => {
+    if (element.hasAttribute(CUSTOM_LOGO_IMAGE_ATTR)) {
+      return;
+    }
+
     elements.add(element);
   });
 
@@ -1522,6 +1524,7 @@ function ensureCustomLogo(originalElement) {
       srcset: originalElement.getAttribute("srcset"),
       alt: originalElement.getAttribute("alt"),
       ariaLabel: originalElement.getAttribute("aria-label"),
+      ariaHidden: originalElement.getAttribute("aria-hidden"),
       innerHTML: originalElement.innerHTML,
       filter: originalElement.style.filter,
       backgroundImage: originalElement.style.backgroundImage,
@@ -1556,45 +1559,33 @@ function ensureCustomLogo(originalElement) {
     originalElement.setAttribute("src", getActiveLogoDataUrl());
     originalElement.removeAttribute("srcset");
     originalElement.setAttribute("alt", getRetailerName());
+
+    if (state.customLogoInvert) {
+      originalElement.style.filter = "invert(1)";
+    } else {
+      originalElement.style.filter = originalFilter;
+    }
   } else {
-    let customLogoImage = originalElement.querySelector(
-      `img[${CUSTOM_LOGO_IMAGE_ATTR}]`
-    );
+    let customLogoImage = originalAttributes.customLogoImage;
 
     if (!(customLogoImage instanceof HTMLImageElement)) {
-      originalElement.textContent = "";
       customLogoImage = document.createElement("img");
       customLogoImage.setAttribute(CUSTOM_LOGO_IMAGE_ATTR, "true");
-      originalElement.append(customLogoImage);
+      customLogoImage.setAttribute("data-test", "privateMarketLogo");
+      customLogoImage.className =
+        "header-logo cds-display-block ng-star-inserted";
+      originalAttributes.customLogoImage = customLogoImage;
+    }
+
+    if (originalElement.parentNode && !customLogoImage.isConnected) {
+      originalElement.after(customLogoImage);
     }
 
     customLogoImage.setAttribute("src", getActiveLogoDataUrl());
     customLogoImage.setAttribute("alt", getRetailerName());
-    customLogoImage.style.width = "100%";
-    customLogoImage.style.height = "100%";
-    customLogoImage.style.objectFit = "contain";
-    customLogoImage.style.display = "block";
-
-    originalElement.style.backgroundImage = "none";
-    originalElement.style.backgroundColor = "transparent";
-    originalElement.style.display = "inline-flex";
-    originalElement.style.width = SPAN_LOGO_REPLACEMENT_WIDTH;
-    originalElement.style.height = SPAN_LOGO_REPLACEMENT_HEIGHT;
-    originalElement.style.minWidth = SPAN_LOGO_REPLACEMENT_WIDTH;
-    originalElement.style.minHeight = SPAN_LOGO_REPLACEMENT_HEIGHT;
-    originalElement.style.maxWidth = SPAN_LOGO_REPLACEMENT_WIDTH;
-    originalElement.style.maxHeight = SPAN_LOGO_REPLACEMENT_HEIGHT;
-    originalElement.style.boxSizing = "border-box";
-    originalElement.style.alignItems = "center";
-    originalElement.style.justifyContent = "center";
-    originalElement.style.maskImage = "none";
-    originalElement.style.webkitMaskImage = "none";
-    originalElement.setAttribute("aria-label", getRetailerName());
-  }
-
-  if (state.customLogoInvert) {
-    originalElement.style.filter = "invert(1)";
-  } else {
+    customLogoImage.style.filter = state.customLogoInvert ? "invert(1)" : "";
+    originalElement.style.display = "none";
+    originalElement.setAttribute("aria-hidden", "true");
     originalElement.style.filter = originalFilter;
   }
 
@@ -1724,6 +1715,11 @@ function removeCustomLogo(originalElement) {
     return;
   }
 
+  const customLogoImage = originalAttributes.customLogoImage;
+  if (customLogoImage instanceof HTMLImageElement && customLogoImage.isConnected) {
+    customLogoImage.remove();
+  }
+
   if (originalAttributes.src !== null) {
     originalElement.setAttribute("src", originalAttributes.src);
   } else {
@@ -1746,6 +1742,12 @@ function removeCustomLogo(originalElement) {
     originalElement.setAttribute("aria-label", originalAttributes.ariaLabel);
   } else {
     originalElement.removeAttribute("aria-label");
+  }
+
+  if (originalAttributes.ariaHidden !== null) {
+    originalElement.setAttribute("aria-hidden", originalAttributes.ariaHidden);
+  } else {
+    originalElement.removeAttribute("aria-hidden");
   }
 
   if (
