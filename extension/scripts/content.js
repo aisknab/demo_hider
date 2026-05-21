@@ -32,6 +32,8 @@ const EXCLUDED_TEXT_PARENT_NODES = new Set([
 
 const LOGO_WIDTH = 300;
 const LOGO_HEIGHT = 100;
+const SPAN_LOGO_REPLACEMENT_WIDTH = "160px";
+const SPAN_LOGO_REPLACEMENT_HEIGHT = "44px";
 const CUSTOM_LOGO_STORAGE_KEY = "customLogoDataUrl";
 const CUSTOM_LOGO_INVERT_STORAGE_KEY = "customLogoInvert";
 const CUSTOM_FAVICON_STORAGE_KEY = "customFaviconDataUrl";
@@ -1528,6 +1530,13 @@ function ensureCustomLogo(originalElement) {
       backgroundSize: originalElement.style.backgroundSize,
       backgroundColor: originalElement.style.backgroundColor,
       display: originalElement.style.display,
+      width: originalElement.style.width,
+      height: originalElement.style.height,
+      minWidth: originalElement.style.minWidth,
+      minHeight: originalElement.style.minHeight,
+      maxWidth: originalElement.style.maxWidth,
+      maxHeight: originalElement.style.maxHeight,
+      boxSizing: originalElement.style.boxSizing,
       alignItems: originalElement.style.alignItems,
       justifyContent: originalElement.style.justifyContent,
       maskImage: originalElement.style.maskImage,
@@ -1569,6 +1578,13 @@ function ensureCustomLogo(originalElement) {
     originalElement.style.backgroundImage = "none";
     originalElement.style.backgroundColor = "transparent";
     originalElement.style.display = "inline-flex";
+    originalElement.style.width = SPAN_LOGO_REPLACEMENT_WIDTH;
+    originalElement.style.height = SPAN_LOGO_REPLACEMENT_HEIGHT;
+    originalElement.style.minWidth = SPAN_LOGO_REPLACEMENT_WIDTH;
+    originalElement.style.minHeight = SPAN_LOGO_REPLACEMENT_HEIGHT;
+    originalElement.style.maxWidth = SPAN_LOGO_REPLACEMENT_WIDTH;
+    originalElement.style.maxHeight = SPAN_LOGO_REPLACEMENT_HEIGHT;
+    originalElement.style.boxSizing = "border-box";
     originalElement.style.alignItems = "center";
     originalElement.style.justifyContent = "center";
     originalElement.style.maskImage = "none";
@@ -1780,6 +1796,48 @@ function removeCustomLogo(originalElement) {
     originalElement.style.display = originalAttributes.display;
   } else {
     originalElement.style.removeProperty("display");
+  }
+
+  if (typeof originalAttributes.width === "string") {
+    originalElement.style.width = originalAttributes.width;
+  } else {
+    originalElement.style.removeProperty("width");
+  }
+
+  if (typeof originalAttributes.height === "string") {
+    originalElement.style.height = originalAttributes.height;
+  } else {
+    originalElement.style.removeProperty("height");
+  }
+
+  if (typeof originalAttributes.minWidth === "string") {
+    originalElement.style.minWidth = originalAttributes.minWidth;
+  } else {
+    originalElement.style.removeProperty("min-width");
+  }
+
+  if (typeof originalAttributes.minHeight === "string") {
+    originalElement.style.minHeight = originalAttributes.minHeight;
+  } else {
+    originalElement.style.removeProperty("min-height");
+  }
+
+  if (typeof originalAttributes.maxWidth === "string") {
+    originalElement.style.maxWidth = originalAttributes.maxWidth;
+  } else {
+    originalElement.style.removeProperty("max-width");
+  }
+
+  if (typeof originalAttributes.maxHeight === "string") {
+    originalElement.style.maxHeight = originalAttributes.maxHeight;
+  } else {
+    originalElement.style.removeProperty("max-height");
+  }
+
+  if (typeof originalAttributes.boxSizing === "string") {
+    originalElement.style.boxSizing = originalAttributes.boxSizing;
+  } else {
+    originalElement.style.removeProperty("box-sizing");
   }
 
   if (typeof originalAttributes.alignItems === "string") {
